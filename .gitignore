@@ -1,0 +1,46 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Build and packaging output
+build/
+dist/
+*.egg-info/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# AI-only local context
+docs/context.md
+
+# Logs and runtime output
+*.log
+logs/
+
+# Raspberry Pi / camera captures and generated media
+captures/
+recordings/
+*.h264
+*.mp4
+*.avi
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
