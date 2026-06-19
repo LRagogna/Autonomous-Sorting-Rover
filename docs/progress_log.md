@@ -77,6 +77,8 @@ This log tracks major project decisions, hardware milestones, software work, and
 - Expanded `README.md` with project overview, setup notes, dataset workflow, and Raspberry Pi data workflow.
 - Added `docs/context.md` as an AI-only local context document.
 - Kept `docs/context.md` ignored by git because it is only for local project memory.
+- Added `docs/images/` for project documentation photos.
+- Decided documentation image folders should use filesystem-safe date names like `docs/images/2026-06-19/`.
 
 ### Dataset Workflow
 
@@ -115,12 +117,13 @@ python data/extract_video_frames.py washer pan_01.mp4 --frame-step 15
 - Added `.gitkeep` exceptions so placeholder files stay normal text files.
 - Added `scripts/setup_pi_sparse_checkout.sh`.
 - Decided the Raspberry Pi should use sparse checkout so normal pulls exclude the entire `data/` folder.
+- Added `docs/images/` to the Raspberry Pi sparse checkout exclusions so documentation photos stay on GitHub but do not download to the Pi.
 - Confirmed the Pi setup command pattern:
 
 ```bash
 git lfs install --local --skip-smudge
 git sparse-checkout init --no-cone
-git sparse-checkout set '/*' '!/data/'
+git sparse-checkout set '/*' '!/data/' '!/docs/images/'
 git pull
 ```
 
