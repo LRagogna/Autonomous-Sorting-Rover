@@ -36,8 +36,6 @@ logs/
 captures/
 recordings/
 *.h264
-*.mp4
-*.avi
 
 # OS and editor files
 .DS_Store
