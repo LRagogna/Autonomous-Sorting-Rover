@@ -22,14 +22,17 @@ The current proof of concept focuses on computer vision: using a Raspberry Pi ca
 README.md
 requirements.txt
 data/
-  photos/
-    washer/
-  videos/
-    washer/
+  extract_video_frames.py
+  labels/
+  processed/
+  raw/
+    photos/
+      washer/
+        pan_01.mp4/
+    videos/
+      washer/
 docs/
   progress_log.md
-src/
-  extract_video_frames.py
 scripts/
   setup_pi_sparse_checkout.sh
 tests/
@@ -66,29 +69,49 @@ Press `q` to quit the camera preview windows.
 
 ## Extract Training Images From Video
 
-Place source videos in object-specific folders under `data/videos/`:
+Place source videos in object-specific folders under `data/raw/videos/`:
 
 ```text
-data/videos/washer/pan_01.mp4
-data/videos/washer/pan_02.mp4
+data/raw/videos/washer/pan_01.mp4
+data/raw/videos/washer/pan_02.mp4
 ```
 
 Then run:
 
 ```bash
-python src/extract_video_frames.py washer/pan_01.mp4
+python data/extract_video_frames.py washer pan_01.mp4
 ```
 
-This infers the object type from the folder name and writes frames to:
+This looks for the video in `data/raw/videos/washer/` and writes frames to:
 
 ```text
-data/photos/washer/
+data/raw/photos/washer/pan_01.mp4/
 ```
+
+Each video gets its own photo folder, so frames from different pans, positions, and lighting conditions stay grouped by source video.
 
 By default, every frame is saved as a PNG. To save fewer frames, use `--frame-step`:
 
 ```bash
-python src/extract_video_frames.py washer/pan_01.mp4 --frame-step 10
+python data/extract_video_frames.py washer pan_01.mp4 --frame-step 10
+```
+
+To process every video under `data/raw/videos/`, use:
+
+```bash
+python data/extract_video_frames.py --all --frame-step 15
+```
+
+Batch mode skips videos that already have extracted photos in their matching output folder. For example, this video:
+
+```text
+data/raw/videos/washer/pan_01.mp4
+```
+
+is skipped if this folder already contains image files:
+
+```text
+data/raw/photos/washer/pan_01.mp4/
 ```
 
 ## Dataset Storage
@@ -124,7 +147,7 @@ If the Raspberry Pi needs dataset files later, disable sparse checkout first and
 
 ```bash
 git sparse-checkout disable
-git lfs pull --include="data/photos/washer/**"
+git lfs pull --include="data/raw/photos/washer/**"
 ```
 
 ## Development Status
