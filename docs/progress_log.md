@@ -24,7 +24,7 @@ June 14, 2026
 	- Used Arduino in demo. Must decide between Arduino and ESP32 for actual implementation
 - Finalize sketch of electrical layout for the project
 
-June 16, 2026
+June 15-16, 2026
 - Received Raspberry Pi 4. Set up and gather other necessary parts to interact with Pi (keyboard, monitor, etc)
 - Set up SSH for Raspberry pi and created basic programs, learning RP fundamentals
 
@@ -33,3 +33,6 @@ June 18, 2026
 	- Verified camera detection with program --> rectangle_detect.py in /tests/
 	- Program classifies green objects and highlights them in user view
 - Cleaned up documentation and configured GitHub on RP
+
+June 19, 2026
+- Set up cooling system for RP
