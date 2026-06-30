@@ -134,3 +134,44 @@ git pull
 - Added more thorough comments and top-of-file usage instructions to:
   - `data/extract_video_frames.py`
   - `tests/rectangle_detect.py`
+
+## Week Of June 22, 2026
+
+### ML Training Images
+
+- Uploaded object images and videos for machine learning training data.
+- Added more source media under `data/raw/videos/` so the object classifier can eventually learn from multiple object categories and camera angles.
+- Continued building the dataset needed for the rover's vision system.
+
+## June 29, 2026
+
+### Wheel Power And Electrical Architecture
+
+- Worked through how to power the rover wheels reliably.
+- Figured out the electrical architecture for coordinating the Raspberry Pi and Arduino.
+- Decided the Raspberry Pi should act as the high-level controller while the Arduino handles low-level motor commands over serial.
+
+### Arduino Motor Control
+
+- Added `src/serial_drive_turns.ino` for the Elegoo Smart Robot Car V4.0.
+- The Arduino sketch accepts serial commands for forward, backward, stop, and calibrated in-place turns.
+- Implemented non-blocking turn timing in the Arduino sketch so serial input can still be read while a turn is in progress.
+
+### Raspberry Pi Main Program
+
+- Added `src/main.py` as the main Raspberry Pi-side program entry point.
+- The main program accepts compact movement sequences such as `FFBB`.
+- `FFBB` now maps to two one-second forward movements followed by two one-second backward movements, with a stop command after each movement.
+- Added `pyserial` to `requirements.txt` so the Raspberry Pi can send commands to the Arduino over USB serial.
+
+### Raspberry Pi Data Safety
+
+- Confirmed the Raspberry Pi should not pull videos or training data from the `data/` folder during normal operation.
+- Updated `scripts/setup_pi_sparse_checkout.sh` to keep `data/` and `docs/images/` out of the Raspberry Pi checkout.
+- Added a Git LFS fetch exclusion for `data/**` and `docs/images/**` as an extra guard against downloading large dataset files onto the Raspberry Pi.
+- Updated `README.md` with the matching Raspberry Pi sparse checkout and Git LFS setup instructions.
+
+### GitHub Workflow
+
+- Resolved a non-fast-forward push issue by fetching the latest GitHub commits, rebasing the local work on top of them, and pushing the updated `main` branch.
+- Confirmed the local branch and GitHub `main` branch were synced after the push.
