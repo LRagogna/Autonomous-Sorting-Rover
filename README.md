@@ -115,6 +115,69 @@ is skipped if this folder already contains image files:
 data/raw/photos/washer/pan_01.mp4/
 ```
 
+## Train And Validate A Starter Classifier
+
+The first training pipeline lives in:
+
+```bash
+python ml/train_classifier.py
+```
+
+It trains a small OpenCV SVM classifier and validates it before saving model files. This is meant as a lightweight starter model while the dataset is still small.
+
+The script can use either processed classification folders:
+
+```text
+data/processed/classification/
+  train/
+    washer/
+      image_001.png
+    bolt/
+      image_001.png
+  val/
+    washer/
+      image_002.png
+    bolt/
+      image_002.png
+```
+
+or raw extracted frames:
+
+```text
+data/raw/photos/
+  washer/
+    pan_01.mp4/
+      frame_000000.png
+  bolt/
+    pan_01.mp4/
+      frame_000000.png
+```
+
+When using raw extracted frames, the trainer splits by source video folder instead of randomly mixing individual frames. That keeps similar frames from the same video from appearing in both training and validation.
+
+Run with raw extracted frames:
+
+```bash
+python ml/train_classifier.py --dataset raw
+```
+
+Run with a prepared train/validation dataset:
+
+```bash
+python ml/train_classifier.py --dataset processed
+```
+
+The trainer needs at least two object classes and validation images for each class. If no usable dataset exists yet, it exits with setup instructions instead of creating a bad model.
+
+Successful training writes:
+
+```text
+models/object_classifier.yml
+models/object_classifier_metadata.json
+models/object_classifier_metrics.json
+models/object_classifier_validation.csv
+```
+
 ## Documentation Images
 
 Project documentation pictures should go in date-labeled folders under `docs/images/`. Use a filename-safe date format with dashes:
@@ -155,12 +218,13 @@ If the Raspberry Pi does not have that script yet, run the same setup manually b
 
 ```bash
 git lfs install --local --skip-smudge
+git config --local lfs.fetchexclude "data/**,docs/images/**"
 git sparse-checkout init --no-cone
 git sparse-checkout set "/*" "!/data/" "!/docs/images/"
 git pull
 ```
 
-This keeps the dataset and documentation images visible on GitHub while keeping the Raspberry Pi checkout focused on runtime code and lightweight text docs.
+This keeps the dataset and documentation images visible on GitHub while keeping the Raspberry Pi checkout focused on runtime code and lightweight text docs. The LFS fetch exclusion also prevents the Pi from downloading files under `data/` during normal LFS operations.
 
 If the Raspberry Pi needs dataset files later, disable sparse checkout first and then pull the specific LFS paths:
 
