@@ -1,0 +1,4 @@
+path,primary_predicted,wrench_override,override_applied,predicted
+/Users/leonardoragogna/Desktop/AutonomousRover/models/internet_tests/lowes_kobalt/kobalt_main.jpg,steel_tape,False,False,steel_tape
+/Users/leonardoragogna/Desktop/AutonomousRover/models/internet_tests/lowes_kobalt/kobalt_view2.jpg,wrench,True,False,wrench
+/Users/leonardoragogna/Desktop/AutonomousRover/models/internet_tests/lowes_kobalt/kobalt_view3.jpg,wrench,True,False,wrench

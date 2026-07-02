@@ -60,6 +60,20 @@ On Raspberry Pi OS, install Picamera2 through the system package manager:
 sudo apt install python3-picamera2
 ```
 
+For the live classifier on Raspberry Pi, the system OpenCV package is usually
+the easiest path:
+
+```bash
+sudo apt install python3-picamera2 python3-opencv python3-numpy
+```
+
+For Coral TPU inference, also install the Coral runtime/PyCoral package on the
+Pi:
+
+```bash
+sudo apt install python3-pycoral
+```
+
 ## Run the Vision Test
 
 ```bash
@@ -67,6 +81,65 @@ python tests/rectangle_detect.py
 ```
 
 Press `q` to quit the camera preview windows.
+
+## Run The Live Object Classifier On Raspberry Pi
+
+The default Pi classifier command is Coral-required:
+
+```bash
+./scripts/run_pi_classifier.sh
+```
+
+It expects an Edge-TPU-compiled TensorFlow Lite model at:
+
+```text
+models/object_classifier_edgetpu.tflite
+models/object_classifier_labels.txt
+```
+
+If that compiled `.tflite` file is missing, the command fails instead of
+silently using the CPU. This is intentional, so Coral mode really means Coral
+mode.
+
+The preview window shows the camera feed and the current object label. Press
+`q` in the preview window to quit.
+
+If you are connected over SSH or do not have a desktop preview:
+
+```bash
+./scripts/run_pi_classifier.sh --headless
+```
+
+Headless mode prints the detected label whenever it changes.
+
+The current OpenCV SVM model can still run as a CPU fallback:
+
+```bash
+./scripts/run_pi_classifier_cpu.sh
+```
+
+CPU fallback uses:
+
+```text
+models/object_classifier.yml
+models/object_classifier_metadata.json
+models/wrench_override.yml
+models/wrench_override_metadata.json
+```
+
+The wrench override files are optional in CPU mode, but recommended. If they are
+present, the CPU classifier uses them automatically.
+
+Useful runtime options:
+
+```bash
+./scripts/run_pi_classifier.sh --width 640 --height 480
+./scripts/run_pi_classifier.sh --crop-mode vote
+./scripts/run_pi_classifier_cpu.sh --disable-wrench-override
+```
+
+This is still a whole-frame classifier. It classifies what the camera is looking
+at; it does not yet draw a tight box around the object.
 
 ## Extract Training Images From Video
 
@@ -176,6 +249,83 @@ models/object_classifier.yml
 models/object_classifier_metadata.json
 models/object_classifier_metrics.json
 models/object_classifier_validation.csv
+```
+
+## Prepare A Cleaner Classification Dataset
+
+Raw extracted frames can include a lot of background and repeated near-identical
+frames. To build a cleaner train/validation dataset from all extracted frames,
+run:
+
+```bash
+python data/prepare_classification_dataset.py --overwrite
+```
+
+This writes balanced cropped images to:
+
+```text
+data/processed/classification/
+  train/
+  val/
+```
+
+Then train from the processed dataset:
+
+```bash
+python ml/train_classifier.py --dataset processed
+```
+
+Optional representative examples can go in:
+
+```text
+data/external/classification/<label>/
+```
+
+For example, flat product-style wrench references can go in:
+
+```text
+data/external/classification/wrench/
+```
+
+After training the main classifier, train the targeted wrench override model:
+
+```bash
+python ml/train_wrench_override.py
+```
+
+This trains a small binary wrench-vs-not-wrench model. During detection, it can
+correct common mistakes where a wrench is first classified as `wire` or
+`steel_tape`.
+
+## Detect Objects In Pictures
+
+After training, classify one picture:
+
+```bash
+python ml/detect_objects.py path/to/image.jpg
+```
+
+Classify a folder of pictures:
+
+```bash
+python ml/detect_objects.py path/to/folder --recursive
+```
+
+The detector writes:
+
+```text
+models/object_detections.csv
+models/object_detections_summary.json
+models/annotated_detections/
+```
+
+This starter detector predicts one object label for the whole picture. It does
+not yet draw a tight box around the object. If `models/wrench_override.yml`
+exists, the detector uses it automatically. To compare the raw multiclass
+prediction without that override, run:
+
+```bash
+python ml/detect_objects.py path/to/image.jpg --disable-wrench-override
 ```
 
 ## Documentation Images

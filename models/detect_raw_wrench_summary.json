@@ -1,0 +1,12 @@
+{
+  "total_images": 69,
+  "majority_prediction": "steel_tape",
+  "majority_count": 26,
+  "majority_fraction": 0.3768,
+  "counts": {
+    "bit": 5,
+    "steel_tape": 26,
+    "wire": 14,
+    "wrench": 24
+  }
+}

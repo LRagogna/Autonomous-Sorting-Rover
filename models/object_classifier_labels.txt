@@ -1,0 +1,4 @@
+0 bit
+1 steel_tape
+2 wire
+3 wrench

@@ -1,0 +1,10 @@
+{
+  "total_images": 3,
+  "majority_prediction": "wrench",
+  "majority_count": 2,
+  "majority_fraction": 0.6667,
+  "counts": {
+    "steel_tape": 1,
+    "wrench": 2
+  }
+}
