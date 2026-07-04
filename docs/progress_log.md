@@ -224,7 +224,7 @@ git pull
 
 ### One-Command Retraining
 
-- Added `scripts/retrain.sh`: a single command that rebuilds the dataset from all source folders (`data/raw/photos` + `data/hand_labeled`) and then trains the detector, so adding more data is just "drop files in → run one script → test."
+- Added `scripts/retrain.sh`: a single command that (1) slices any new videos in `data/raw/videos` into photos (skipping already-sliced ones), (2) rebuilds the dataset from all source folders (`data/raw/photos` + `data/hand_labeled`), and (3) trains the detector — so adding more data is just "drop files in → run one script → test." Frames-per-video is controllable with `FRAME_STEP`.
 - It uses the Apple GPU by default (`DEVICE=cpu ./scripts/retrain.sh` forces CPU) and passes extra options straight through (for example `./scripts/retrain.sh --epochs 60 --scale 0.9`).
 - Clarified the mental model for the user: the builder always rebuilds the dataset from every source folder, and `ml/train_yolo.py` always retrains from the pretrained base on the whole combined dataset, so new data is automatically learned together with old data (no manual merging, no forgetting).
 - Advised on data quantity: roughly 150-250 varied, in-domain (webcam) labeled images per object, prioritizing the bit, with variety (hands, several backgrounds, near/far, angles, lighting) mattering more than raw count.

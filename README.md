@@ -57,10 +57,17 @@ single command:
 ./scripts/retrain.sh
 ```
 
-This rebuilds the dataset from **all** your source folders (old and new together)
-and trains the detector into `models/yolo_detector.pt`. Pass training options
-straight through, for example `./scripts/retrain.sh --epochs 60 --scale 0.9`, or
-force the CPU with `DEVICE=cpu ./scripts/retrain.sh`.
+This does everything for you: it **slices any new videos** in `data/raw/videos`
+into photos (already-sliced videos are skipped), **rebuilds the dataset** from all
+your source folders (old and new together), and **trains** the detector into
+`models/yolo_detector.pt`. Pass training options straight through, for example
+`./scripts/retrain.sh --epochs 60 --scale 0.9`, force the CPU with
+`DEVICE=cpu ./scripts/retrain.sh`, or keep more frames per video with
+`FRAME_STEP=10 ./scripts/retrain.sh`.
+
+So if you record a new clip, you can just drop the video file into
+`data/raw/videos/<object>/` and run `./scripts/retrain.sh` — no separate extract
+step needed.
 
 ## The Vision Pipeline In Steps
 
