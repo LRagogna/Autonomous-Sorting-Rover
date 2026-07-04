@@ -14,7 +14,7 @@ The current proof of concept focuses on computer vision: using a Raspberry Pi ca
 - OV5647 Raspberry Pi camera for visual detection
 - Tank-style drive layout with each side moving together
 - Relay-controlled electromagnet for metal object pickup
-- Possible Coral TPU for future object recognition acceleration
+- Coral Edge TPU for accelerated object classification on the Pi
 
 ## Repository Layout
 
@@ -101,8 +101,10 @@ If that compiled `.tflite` file is missing, the command fails instead of
 silently using the CPU. This is intentional, so Coral mode really means Coral
 mode.
 
-The preview window shows the camera feed and the current object label. Press
-`q` in the preview window to quit.
+The preview window shows the camera feed, finds likely object regions, sends
+those cropped regions through the classifier, and draws a green box with the
+predicted label around each classified object. Press `q` in the preview window
+to quit.
 
 If you are connected over SSH or do not have a desktop preview:
 
@@ -134,12 +136,17 @@ Useful runtime options:
 
 ```bash
 ./scripts/run_pi_classifier.sh --width 640 --height 480
-./scripts/run_pi_classifier.sh --crop-mode vote
+./scripts/run_pi_classifier.sh --max-objects 3
+./scripts/run_pi_classifier.sh --min-object-area-ratio 0.005
+./scripts/run_pi_classifier.sh --box-padding 24
 ./scripts/run_pi_classifier_cpu.sh --disable-wrench-override
 ```
 
-This is still a whole-frame classifier. It classifies what the camera is looking
-at; it does not yet draw a tight box around the object.
+By default, live mode uses `--detection-mode objects`. OpenCV only does the
+lightweight candidate-box proposal work; the actual classification inference is
+done by the Coral Edge TPU when you use `./scripts/run_pi_classifier.sh`.
+Use `--detection-mode frame` only if you want the older whole-frame behavior for
+debugging.
 
 ## Extract Training Images From Video
 
