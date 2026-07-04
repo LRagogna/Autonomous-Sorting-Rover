@@ -6,3 +6,7 @@ pyserial>=3.5
 # Raspberry Pi camera support is usually installed through Raspberry Pi OS:
 #   sudo apt install python3-picamera2
 # It is not listed as a pip dependency because Picamera2 depends on system camera packages.
+
+# Optional training/export tools:
+# - ml/train_coral_classifier.py needs TensorFlow on a development machine.
+# - Coral runtime/PyCoral and edgetpu_compiler are installed through Raspberry Pi OS/Debian packages.

@@ -55,8 +55,8 @@ def make_interpreter(model_path: Path):
             "Edge TPU model file not found: "
             f"{model_path}\n\n"
             "The current OpenCV .yml model cannot run on the Coral TPU. "
-            "Train/export a quantized TensorFlow Lite model, compile it with "
-            "edgetpu_compiler, and place it at this path."
+            "Run ml/train_coral_classifier.py to train/export a quantized "
+            "TensorFlow Lite model and compile it with edgetpu_compiler."
         )
 
     try:

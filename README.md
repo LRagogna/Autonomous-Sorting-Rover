@@ -74,6 +74,14 @@ Pi:
 sudo apt install python3-pycoral
 ```
 
+The Coral model is trained/exported with TensorFlow on a development machine.
+TensorFlow is intentionally not in `requirements.txt` because it is too large
+for the normal Raspberry Pi runtime setup:
+
+```bash
+python3 -m pip install tensorflow
+```
+
 ## Run the Vision Test
 
 ```bash
@@ -297,6 +305,38 @@ crops:
 
 ```bash
 python ml/backtest_live_filter.py --positive-dir data/raw/photos
+```
+
+## Build The Coral TPU Classifier
+
+The OpenCV `.yml` model cannot run on the Coral TPU. To make the classifier file
+that actually runs the heavy neural-network inference on Coral, train and export
+the TensorFlow Lite model:
+
+```bash
+python ml/train_coral_classifier.py --epochs 30
+```
+
+This writes:
+
+```text
+models/object_classifier_coral.keras
+models/object_classifier.tflite
+models/object_classifier_edgetpu.tflite
+models/object_classifier_labels.txt
+```
+
+`models/object_classifier_edgetpu.tflite` is the file used by:
+
+```bash
+./scripts/run_pi_classifier.sh
+```
+
+If `edgetpu_compiler` is missing, install it on a Linux development machine or
+the Raspberry Pi:
+
+```bash
+sudo apt install edgetpu-compiler
 ```
 
 Optional representative examples can go in:
