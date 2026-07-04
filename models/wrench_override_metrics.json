@@ -1,62 +1,80 @@
 {
-  "accuracy": 0.6719,
-  "correct": 86,
-  "total": 128,
+  "accuracy": 0.6562,
+  "correct": 105,
+  "total": 160,
   "classes": [
+    "background",
     "bit",
     "steel_tape",
     "wire",
     "wrench"
   ],
   "per_class": {
+    "background": {
+      "precision": 0.549,
+      "recall": 0.875,
+      "f1": 0.6747,
+      "support": 32
+    },
     "bit": {
-      "precision": 0.7667,
-      "recall": 0.7188,
-      "f1": 0.7419,
+      "precision": 0.7037,
+      "recall": 0.5938,
+      "f1": 0.6441,
       "support": 32
     },
     "steel_tape": {
-      "precision": 0.6286,
-      "recall": 0.6875,
-      "f1": 0.6567,
+      "precision": 0.75,
+      "recall": 0.6562,
+      "f1": 0.7,
       "support": 32
     },
     "wire": {
-      "precision": 0.6667,
-      "recall": 0.6875,
-      "f1": 0.6769,
+      "precision": 0.6207,
+      "recall": 0.5625,
+      "f1": 0.5902,
       "support": 32
     },
     "wrench": {
-      "precision": 0.6333,
+      "precision": 0.76,
       "recall": 0.5938,
-      "f1": 0.6129,
+      "f1": 0.6667,
       "support": 32
     }
   },
   "confusion_matrix": [
     [
-      23,
-      1,
+      28,
+      2,
+      2,
       0,
-      8
+      0
     ],
     [
+      5,
+      19,
+      2,
+      3,
+      3
+    ],
+    [
+      3,
       1,
-      22,
+      21,
       7,
-      2
+      0
     ],
     [
       5,
       4,
-      22,
-      1
+      2,
+      18,
+      3
     ],
     [
+      10,
       1,
-      8,
-      4,
+      1,
+      1,
       19
     ]
   ],
@@ -64,5 +82,5 @@
     "steel_tape",
     "wire"
   ],
-  "override_applied_count": 7
+  "override_applied_count": 0
 }

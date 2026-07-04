@@ -48,6 +48,7 @@ DEFAULT_MODEL_PATH = DEFAULT_MODEL_DIR / "object_classifier.yml"
 DEFAULT_METADATA_PATH = DEFAULT_MODEL_DIR / "object_classifier_metadata.json"
 DEFAULT_METRICS_PATH = DEFAULT_MODEL_DIR / "object_classifier_metrics.json"
 DEFAULT_PREDICTIONS_PATH = DEFAULT_MODEL_DIR / "object_classifier_validation.csv"
+DEFAULT_LABELS_PATH = DEFAULT_MODEL_DIR / "object_classifier_labels.txt"
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
@@ -115,6 +116,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_PREDICTIONS_PATH,
         help="Path for per-image validation predictions CSV.",
+    )
+    parser.add_argument(
+        "--labels-path",
+        type=Path,
+        default=DEFAULT_LABELS_PATH,
+        help="Path for class labels used by exported TensorFlow Lite models.",
     )
     parser.add_argument(
         "--image-size",
@@ -340,7 +347,16 @@ def extract_features(image_path: Path, image_size: int) -> np.ndarray:
         histogram = cv2.normalize(histogram, None).reshape(-1)
         histograms.append(histogram.astype(np.float32))
 
-    return np.concatenate([gray_features, *histograms]).astype(np.float32)
+    hog = cv2.HOGDescriptor(
+        _winSize=(image_size, image_size),
+        _blockSize=(16, 16),
+        _blockStride=(8, 8),
+        _cellSize=(8, 8),
+        _nbins=9,
+    )
+    hog_features = hog.compute(gray).reshape(-1).astype(np.float32)
+
+    return np.concatenate([gray_features, hog_features, *histograms]).astype(np.float32)
 
 
 def build_feature_matrix(
@@ -455,6 +471,13 @@ def write_json(output_path: Path, data: dict[str, object]) -> None:
         json_file.write("\n")
 
 
+def write_labels(output_path: Path, class_names: list[str]) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as labels_file:
+        for index, class_name in enumerate(class_names):
+            labels_file.write(f"{index} {class_name}\n")
+
+
 def main() -> int:
     args = parse_args()
 
@@ -491,7 +514,7 @@ def main() -> int:
             "dataset": dataset_name,
             "class_names": class_names,
             "image_size": args.image_size,
-            "feature_kind": "grayscale_pixels_plus_hsv_histograms",
+            "feature_kind": "grayscale_pixels_plus_hog_plus_hsv_histograms",
             "normalization": {
                 "mean": mean.astype(float).tolist(),
                 "std": std.astype(float).tolist(),
@@ -505,6 +528,7 @@ def main() -> int:
 
         write_json(args.metadata_path, metadata)
         write_json(args.metrics_path, metrics)
+        write_labels(args.labels_path, class_names)
         write_predictions(
             args.predictions_path,
             splits.val,
@@ -525,6 +549,7 @@ def main() -> int:
     print(f"Saved model: {args.model_path}")
     print(f"Saved metadata: {args.metadata_path}")
     print(f"Saved metrics: {args.metrics_path}")
+    print(f"Saved labels: {args.labels_path}")
     print(f"Saved validation predictions: {args.predictions_path}")
     return 0
 

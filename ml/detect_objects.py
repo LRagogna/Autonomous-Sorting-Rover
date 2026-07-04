@@ -225,7 +225,16 @@ def extract_features_from_image(image, image_size: int) -> np.ndarray:
         histogram = cv2.normalize(histogram, None).reshape(-1)
         histograms.append(histogram.astype(np.float32))
 
-    return np.concatenate([gray_features, *histograms]).astype(np.float32)
+    hog = cv2.HOGDescriptor(
+        _winSize=(image_size, image_size),
+        _blockSize=(16, 16),
+        _blockStride=(8, 8),
+        _cellSize=(8, 8),
+        _nbins=9,
+    )
+    hog_features = hog.compute(gray).reshape(-1).astype(np.float32)
+
+    return np.concatenate([gray_features, hog_features, *histograms]).astype(np.float32)
 
 
 def standardize_feature(feature: np.ndarray, metadata: dict[str, object]) -> np.ndarray:

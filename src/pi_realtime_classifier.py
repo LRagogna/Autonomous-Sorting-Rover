@@ -15,7 +15,7 @@ import argparse
 import sys
 import time
 from collections import Counter, deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -53,12 +53,22 @@ DEFAULT_HEIGHT = 480
 DEFAULT_BACKEND = "edgetpu"
 DEFAULT_CLASSIFY_EVERY_FRAMES = 2
 DEFAULT_SMOOTHING_WINDOW = 7
+DEFAULT_CONFIRM_FRAMES = 2
 DEFAULT_CROP_SCALE = 0.85
-DEFAULT_MAX_OBJECTS = 3
-DEFAULT_MIN_OBJECT_AREA_RATIO = 0.01
+DEFAULT_MAX_OBJECTS = 1
+DEFAULT_MIN_OBJECT_AREA_RATIO = 0.018
 DEFAULT_MAX_OBJECT_AREA_RATIO = 0.70
 DEFAULT_BOX_PADDING = 18
 DEFAULT_PROPOSAL_WIDTH = 480
+DEFAULT_MIN_VOTE_FRACTION = 0.66
+DEFAULT_MIN_CONFIDENCE = 0.65
+DEFAULT_MIN_OBJECTNESS = 0.16
+DEFAULT_MIN_FOREGROUND_RATIO = 0.025
+DEFAULT_MAX_FOREGROUND_RATIO = 0.62
+DEFAULT_MIN_EDGE_DENSITY = 0.004
+DEFAULT_MAX_EDGE_DENSITY = 0.34
+DEFAULT_EDGE_MARGIN_RATIO = 0.02
+DEFAULT_REJECT_LABELS = ("background", "unknown", "none")
 
 
 @dataclass(frozen=True)
@@ -70,9 +80,18 @@ class FramePrediction:
     variant_counts: dict[str, int]
     backend: str
     score: float | None = None
+    vote_fraction: float = 0.0
     bbox: tuple[int, int, int, int] | None = None
     proposal_score: float = 0.0
+    objectness: float = 0.0
+    foreground_ratio: float = 0.0
+    edge_density: float = 0.0
+    contrast: float = 0.0
     source: str = "frame"
+    frame_width: int = 0
+    frame_height: int = 0
+    accepted: bool = True
+    reject_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +99,10 @@ class ObjectCandidate:
     bbox: tuple[int, int, int, int]
     score: float
     source: str
+    objectness: float
+    foreground_ratio: float
+    edge_density: float
+    contrast: float
 
 
 @dataclass
@@ -144,7 +167,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--disable-wrench-override",
         action="store_true",
-        help="Only use the multiclass classifier.",
+        help="Only use the multiclass classifier. Kept for older commands.",
+    )
+    parser.add_argument(
+        "--enable-wrench-override",
+        action="store_true",
+        help="Use the optional binary wrench override model in CPU mode.",
     )
     parser.add_argument(
         "--width",
@@ -174,6 +202,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Number of recent predictions used for majority-vote smoothing. "
             f"Defaults to {DEFAULT_SMOOTHING_WINDOW}."
+        ),
+    )
+    parser.add_argument(
+        "--confirm-frames",
+        type=int,
+        default=DEFAULT_CONFIRM_FRAMES,
+        help=(
+            "Require the same accepted label for this many classification passes "
+            f"before drawing a green box. Defaults to {DEFAULT_CONFIRM_FRAMES}."
         ),
     )
     parser.add_argument(
@@ -222,6 +259,102 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Downscaled width used for fast CPU region proposals. "
             f"Defaults to {DEFAULT_PROPOSAL_WIDTH}."
+        ),
+    )
+    parser.add_argument(
+        "--min-vote-fraction",
+        type=float,
+        default=DEFAULT_MIN_VOTE_FRACTION,
+        help=(
+            "Minimum fraction of crop variants that must agree before a label "
+            f"is shown. Defaults to {DEFAULT_MIN_VOTE_FRACTION}."
+        ),
+    )
+    parser.add_argument(
+        "--min-confidence",
+        type=float,
+        default=DEFAULT_MIN_CONFIDENCE,
+        help=(
+            "Minimum Edge TPU class score needed before a label is shown. "
+            f"Defaults to {DEFAULT_MIN_CONFIDENCE}."
+        ),
+    )
+    parser.add_argument(
+        "--min-objectness",
+        type=float,
+        default=DEFAULT_MIN_OBJECTNESS,
+        help=(
+            "Minimum proposal objectness needed before a box is labeled. "
+            f"Defaults to {DEFAULT_MIN_OBJECTNESS}."
+        ),
+    )
+    parser.add_argument(
+        "--min-foreground-ratio",
+        type=float,
+        default=DEFAULT_MIN_FOREGROUND_RATIO,
+        help=(
+            "Reject proposal boxes with too little detected foreground detail. "
+            f"Defaults to {DEFAULT_MIN_FOREGROUND_RATIO}."
+        ),
+    )
+    parser.add_argument(
+        "--max-foreground-ratio",
+        type=float,
+        default=DEFAULT_MAX_FOREGROUND_RATIO,
+        help=(
+            "Reject proposal boxes dominated by texture/noise. "
+            f"Defaults to {DEFAULT_MAX_FOREGROUND_RATIO}."
+        ),
+    )
+    parser.add_argument(
+        "--min-edge-density",
+        type=float,
+        default=DEFAULT_MIN_EDGE_DENSITY,
+        help=(
+            "Reject proposal boxes with too few object edges. "
+            f"Defaults to {DEFAULT_MIN_EDGE_DENSITY}."
+        ),
+    )
+    parser.add_argument(
+        "--max-edge-density",
+        type=float,
+        default=DEFAULT_MAX_EDGE_DENSITY,
+        help=(
+            "Reject proposal boxes that look like busy background texture. "
+            f"Defaults to {DEFAULT_MAX_EDGE_DENSITY}."
+        ),
+    )
+    parser.add_argument(
+        "--edge-margin-ratio",
+        type=float,
+        default=DEFAULT_EDGE_MARGIN_RATIO,
+        help=(
+            "Reject object boxes within this fraction of a frame edge. "
+            f"Defaults to {DEFAULT_EDGE_MARGIN_RATIO}."
+        ),
+    )
+    parser.add_argument(
+        "--allow-edge-boxes",
+        action="store_true",
+        help="Allow detections that touch the edge of the camera frame.",
+    )
+    parser.add_argument(
+        "--fallback-center-box",
+        action="store_true",
+        help="Classify a center crop if no object-like region is found.",
+    )
+    parser.add_argument(
+        "--show-rejected",
+        action="store_true",
+        help="Draw gray debug boxes for rejected candidate regions.",
+    )
+    parser.add_argument(
+        "--reject-label",
+        action="append",
+        default=list(DEFAULT_REJECT_LABELS),
+        help=(
+            "Classifier label that should never be shown as a detected object. "
+            "Can be passed more than once. Defaults to background/unknown/none."
         ),
     )
     parser.add_argument(
@@ -389,7 +522,57 @@ def center_fallback_candidate(frame_bgr, crop_scale: float) -> ObjectCandidate:
     x2 = min(width, x1 + side)
     y2 = min(height, y1 + side)
     bbox = clamp_box((x1, y1, x2, y2), width, height)
-    return ObjectCandidate(bbox=bbox, score=float(box_area(bbox)), source="center-fallback")
+    return ObjectCandidate(
+        bbox=bbox,
+        score=float(box_area(bbox)),
+        source="center-fallback",
+        objectness=1.0,
+        foreground_ratio=1.0,
+        edge_density=1.0,
+        contrast=1.0,
+    )
+
+
+def scaled_box(
+    bbox: tuple[int, int, int, int],
+    scale: float,
+    frame_width: int,
+    frame_height: int,
+) -> tuple[int, int, int, int]:
+    x1, y1, x2, y2 = bbox
+    return clamp_box(
+        (
+            int(round(x1 * scale)),
+            int(round(y1 * scale)),
+            int(round(x2 * scale)),
+            int(round(y2 * scale)),
+        ),
+        frame_width,
+        frame_height,
+    )
+
+
+def calculate_candidate_quality(
+    gray,
+    edges,
+    mask,
+    bbox: tuple[int, int, int, int],
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = bbox
+    roi_area = max(1, (x2 - x1) * (y2 - y1))
+    roi_gray = gray[y1:y2, x1:x2]
+    roi_edges = edges[y1:y2, x1:x2]
+    roi_mask = mask[y1:y2, x1:x2]
+
+    foreground_ratio = float(cv2.countNonZero(roi_mask) / roi_area)
+    edge_density = float(cv2.countNonZero(roi_edges) / roi_area)
+    contrast = float(roi_gray.std()) if roi_gray.size else 0.0
+    objectness = (
+        0.45 * min(1.0, foreground_ratio / 0.20)
+        + 0.35 * min(1.0, edge_density / 0.08)
+        + 0.20 * min(1.0, contrast / 45.0)
+    )
+    return objectness, foreground_ratio, edge_density, contrast
 
 
 def propose_object_candidates(
@@ -468,8 +651,25 @@ def propose_object_candidates(
         dx = abs(center_x - width / 2.0) / max(1.0, width / 2.0)
         dy = abs(center_y - height / 2.0) / max(1.0, height / 2.0)
         center_bias = max(0.0, 1.0 - min(1.0, (dx * dx + dy * dy) ** 0.5))
-        score = contour_area + area * (0.35 + 0.35 * center_bias)
-        candidates.append(ObjectCandidate(bbox=bbox, score=score, source="contour"))
+        work_bbox = scaled_box(bbox, scale, work_width, work_height)
+        objectness, foreground_ratio, edge_density, contrast = calculate_candidate_quality(
+            gray,
+            edges,
+            mask,
+            work_bbox,
+        )
+        score = contour_area + area * (0.15 + 0.55 * objectness + 0.20 * center_bias)
+        candidates.append(
+            ObjectCandidate(
+                bbox=bbox,
+                score=score,
+                source="contour",
+                objectness=objectness,
+                foreground_ratio=foreground_ratio,
+                edge_density=edge_density,
+                contrast=contrast,
+            )
+        )
 
     candidates.sort(key=lambda candidate: candidate.score, reverse=True)
 
@@ -491,7 +691,13 @@ def classify_frame(
     crop_scale: float,
     bbox: tuple[int, int, int, int] | None = None,
     proposal_score: float = 0.0,
+    objectness: float = 0.0,
+    foreground_ratio: float = 0.0,
+    edge_density: float = 0.0,
+    contrast: float = 0.0,
     source: str = "frame",
+    frame_width: int = 0,
+    frame_height: int = 0,
 ) -> FramePrediction:
     variants = crop_variants(frame_bgr, crop_mode, crop_scale)
     primary_labels: list[str] = []
@@ -527,6 +733,7 @@ def classify_frame(
     center_index = min(1, len(final_labels) - 1)
     final_label = choose_vote_label(final_labels, final_labels[center_index])
     primary_label = choose_vote_label(primary_labels, primary_labels[center_index])
+    vote_fraction = Counter(final_labels)[final_label] / max(1, len(final_labels))
 
     return FramePrediction(
         label=final_label,
@@ -536,10 +743,100 @@ def classify_frame(
         variant_counts=dict(sorted(Counter(final_labels).items())),
         backend=runtime.backend,
         score=max(scores) if scores else None,
+        vote_fraction=vote_fraction,
         bbox=bbox,
         proposal_score=proposal_score,
+        objectness=objectness,
+        foreground_ratio=foreground_ratio,
+        edge_density=edge_density,
+        contrast=contrast,
         source=source,
+        frame_width=frame_width,
+        frame_height=frame_height,
     )
+
+
+def touches_frame_edge(prediction: FramePrediction, edge_margin_ratio: float) -> bool:
+    if prediction.bbox is None or prediction.frame_width <= 0 or prediction.frame_height <= 0:
+        return False
+
+    x1, y1, x2, y2 = prediction.bbox
+    margin_x = max(1, int(prediction.frame_width * edge_margin_ratio))
+    margin_y = max(1, int(prediction.frame_height * edge_margin_ratio))
+    return (
+        x1 <= margin_x
+        or y1 <= margin_y
+        or x2 >= prediction.frame_width - margin_x
+        or y2 >= prediction.frame_height - margin_y
+    )
+
+
+def evaluate_prediction(
+    prediction: FramePrediction,
+    args: argparse.Namespace,
+) -> FramePrediction:
+    reject_labels = {str(label).lower() for label in args.reject_label}
+    if prediction.label.lower() in reject_labels:
+        return replace(
+            prediction,
+            accepted=False,
+            reject_reason=f"reject label {prediction.label}",
+        )
+
+    if not args.allow_edge_boxes and touches_frame_edge(prediction, args.edge_margin_ratio):
+        return replace(
+            prediction,
+            accepted=False,
+            reject_reason="box touches frame edge",
+        )
+
+    if prediction.vote_fraction < args.min_vote_fraction:
+        return replace(
+            prediction,
+            accepted=False,
+            reject_reason=f"low vote agreement {prediction.vote_fraction:.2f}",
+        )
+
+    if prediction.score is not None and prediction.score < args.min_confidence:
+        return replace(
+            prediction,
+            accepted=False,
+            reject_reason=f"low confidence {prediction.score:.2f}",
+        )
+
+    if prediction.source != "center-fallback":
+        if prediction.objectness < args.min_objectness:
+            return replace(
+                prediction,
+                accepted=False,
+                reject_reason=f"low objectness {prediction.objectness:.2f}",
+            )
+        if prediction.foreground_ratio < args.min_foreground_ratio:
+            return replace(
+                prediction,
+                accepted=False,
+                reject_reason=f"low foreground {prediction.foreground_ratio:.3f}",
+            )
+        if prediction.foreground_ratio > args.max_foreground_ratio:
+            return replace(
+                prediction,
+                accepted=False,
+                reject_reason=f"busy foreground {prediction.foreground_ratio:.3f}",
+            )
+        if prediction.edge_density < args.min_edge_density:
+            return replace(
+                prediction,
+                accepted=False,
+                reject_reason=f"low edge density {prediction.edge_density:.3f}",
+            )
+        if prediction.edge_density > args.max_edge_density:
+            return replace(
+                prediction,
+                accepted=False,
+                reject_reason=f"busy edge density {prediction.edge_density:.3f}",
+            )
+
+    return prediction
 
 
 def classify_objects_in_frame(
@@ -547,13 +844,17 @@ def classify_objects_in_frame(
     runtime: ClassifierRuntime,
     args: argparse.Namespace,
 ) -> list[FramePrediction]:
+    frame_height, frame_width = frame_bgr.shape[:2]
     if args.detection_mode == "frame":
         return [
-            classify_frame(
-                frame_bgr,
-                runtime,
-                args.crop_mode,
-                args.crop_scale,
+            evaluate_prediction(
+                classify_frame(
+                    frame_bgr,
+                    runtime,
+                    args.crop_mode,
+                    args.crop_scale,
+                ),
+                args,
             )
         ]
 
@@ -565,7 +866,7 @@ def classify_objects_in_frame(
         args.box_padding,
         args.proposal_width,
     )
-    if not candidates:
+    if not candidates and args.fallback_center_box:
         candidates = [center_fallback_candidate(frame_bgr, args.crop_scale)]
 
     predictions: list[FramePrediction] = []
@@ -574,14 +875,23 @@ def classify_objects_in_frame(
         if crop.size == 0:
             continue
         predictions.append(
-            classify_frame(
-                crop,
-                runtime,
-                "never",
-                args.crop_scale,
-                bbox=candidate.bbox,
-                proposal_score=candidate.score,
-                source=candidate.source,
+            evaluate_prediction(
+                classify_frame(
+                    crop,
+                    runtime,
+                    "vote",
+                    args.crop_scale,
+                    bbox=candidate.bbox,
+                    proposal_score=candidate.score,
+                    objectness=candidate.objectness,
+                    foreground_ratio=candidate.foreground_ratio,
+                    edge_density=candidate.edge_density,
+                    contrast=candidate.contrast,
+                    source=candidate.source,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                ),
+                args,
             )
         )
 
@@ -613,14 +923,20 @@ def format_prediction_label(prediction: FramePrediction) -> str:
     return label
 
 
-def draw_object_box(frame_bgr, prediction: FramePrediction) -> None:
+def draw_object_box(
+    frame_bgr,
+    prediction: FramePrediction,
+    color: tuple[int, int, int] = (0, 255, 0),
+) -> None:
     if prediction.bbox is None:
         return
 
     x1, y1, x2, y2 = prediction.bbox
-    cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), (0, 255, 0), 3)
+    cv2.rectangle(frame_bgr, (x1, y1), (x2, y2), color, 3)
 
     label = format_prediction_label(prediction)
+    if not prediction.accepted and prediction.reject_reason:
+        label = f"rejected: {prediction.reject_reason}"
     text_scale = 0.62
     text_thickness = 2
     (text_width, text_height), baseline = cv2.getTextSize(
@@ -639,24 +955,25 @@ def draw_object_box(frame_bgr, prediction: FramePrediction) -> None:
         text_y = min(frame_bgr.shape[0] - 4, y1 + text_height + 4)
 
     label_x2 = min(frame_bgr.shape[1], x1 + text_width + 12)
-    cv2.rectangle(frame_bgr, (x1, label_y1), (label_x2, label_y2), (0, 255, 0), -1)
+    cv2.rectangle(frame_bgr, (x1, label_y1), (label_x2, label_y2), color, -1)
     cv2.putText(
         frame_bgr,
         label,
         (x1 + 6, text_y),
         cv2.FONT_HERSHEY_SIMPLEX,
         text_scale,
-        (0, 35, 0),
+        (0, 35, 0) if prediction.accepted else (25, 25, 25),
         text_thickness,
         cv2.LINE_AA,
     )
 
 
 def summarize_predictions(predictions: list[FramePrediction]) -> str:
-    if not predictions:
-        return "warming up"
+    accepted = [prediction for prediction in predictions if prediction.accepted]
+    if not accepted:
+        return "none"
 
-    counts = Counter(prediction.label for prediction in predictions)
+    counts = Counter(prediction.label for prediction in accepted)
     return ", ".join(
         label if count == 1 else f"{label} x{count}"
         for label, count in counts.most_common()
@@ -664,11 +981,12 @@ def summarize_predictions(predictions: list[FramePrediction]) -> str:
 
 
 def format_headless_predictions(predictions: list[FramePrediction]) -> str:
-    if not predictions:
+    accepted = [prediction for prediction in predictions if prediction.accepted]
+    if not accepted:
         return "none"
 
     parts = []
-    for prediction in predictions:
+    for prediction in accepted:
         if prediction.bbox is None:
             box_text = "frame"
         else:
@@ -687,12 +1005,16 @@ def draw_prediction_overlay(
     detection_mode: str,
     crop_mode: str,
     crop_scale: float,
+    show_rejected: bool,
 ) -> None:
     if detection_mode == "frame" and crop_mode in {"always", "auto", "vote"}:
         draw_crop_box(frame_bgr, crop_scale)
 
     for prediction in predictions:
-        draw_object_box(frame_bgr, prediction)
+        if prediction.accepted:
+            draw_object_box(frame_bgr, prediction)
+        elif show_rejected:
+            draw_object_box(frame_bgr, prediction, (160, 160, 160))
 
     label = smoothed_label or summarize_predictions(predictions)
     text = f"Objects: {label}"
@@ -750,12 +1072,14 @@ def load_classifier_runtime(args: argparse.Namespace) -> ClassifierRuntime:
 
     model = load_model(args.model_path)
     metadata = load_metadata(args.metadata_path)
+    use_wrench_override = args.enable_wrench_override and not args.disable_wrench_override
     wrench_override = load_optional_wrench_override(
         args.wrench_override_model_path,
         args.wrench_override_metadata_path,
-        args.disable_wrench_override,
+        not use_wrench_override,
     )
-    print("Using OpenCV CPU backend.", flush=True)
+    override_status = "enabled" if wrench_override is not None else "disabled"
+    print(f"Using OpenCV CPU backend. Wrench override: {override_status}.", flush=True)
     return ClassifierRuntime(
         backend="opencv",
         model=model,
@@ -773,6 +1097,10 @@ def run_live_classifier(args: argparse.Namespace) -> int:
         raise ValueError("--classify-every-frames must be at least 1.")
     if args.smoothing_window < 1:
         raise ValueError("--smoothing-window must be at least 1.")
+    if args.confirm_frames < 1:
+        raise ValueError("--confirm-frames must be at least 1.")
+    if args.confirm_frames > args.smoothing_window:
+        raise ValueError("--confirm-frames cannot exceed --smoothing-window.")
     if not 0 < args.crop_scale <= 1:
         raise ValueError("--crop-scale must be greater than 0 and at most 1.")
     if args.max_objects < 1:
@@ -787,12 +1115,33 @@ def run_live_classifier(args: argparse.Namespace) -> int:
         raise ValueError("--box-padding must be 0 or greater.")
     if args.proposal_width < 0:
         raise ValueError("--proposal-width must be 0 or greater.")
+    if not 0 < args.min_vote_fraction <= 1:
+        raise ValueError("--min-vote-fraction must be greater than 0 and at most 1.")
+    if not 0 <= args.min_confidence <= 1:
+        raise ValueError("--min-confidence must be between 0 and 1.")
+    if not 0 <= args.min_objectness <= 1:
+        raise ValueError("--min-objectness must be between 0 and 1.")
+    if not 0 <= args.min_foreground_ratio <= 1:
+        raise ValueError("--min-foreground-ratio must be between 0 and 1.")
+    if not 0 <= args.max_foreground_ratio <= 1:
+        raise ValueError("--max-foreground-ratio must be between 0 and 1.")
+    if args.min_foreground_ratio > args.max_foreground_ratio:
+        raise ValueError("--min-foreground-ratio cannot exceed --max-foreground-ratio.")
+    if not 0 <= args.min_edge_density <= 1:
+        raise ValueError("--min-edge-density must be between 0 and 1.")
+    if not 0 <= args.max_edge_density <= 1:
+        raise ValueError("--max-edge-density must be between 0 and 1.")
+    if args.min_edge_density > args.max_edge_density:
+        raise ValueError("--min-edge-density cannot exceed --max-edge-density.")
+    if not 0 <= args.edge_margin_ratio < 0.5:
+        raise ValueError("--edge-margin-ratio must be at least 0 and less than 0.5.")
 
     runtime = load_classifier_runtime(args)
 
     camera = configure_camera(args.width, args.height)
     recent_labels: deque[str] = deque(maxlen=args.smoothing_window)
     last_predictions: list[FramePrediction] = []
+    display_predictions: list[FramePrediction] = []
     frame_count = 0
     fps = 0.0
     last_time = time.monotonic()
@@ -816,8 +1165,24 @@ def run_live_classifier(args: argparse.Namespace) -> int:
                     runtime,
                     args,
                 )
-                if last_predictions:
-                    recent_labels.append(last_predictions[0].label)
+                accepted_predictions = [
+                    prediction for prediction in last_predictions if prediction.accepted
+                ]
+                if accepted_predictions:
+                    recent_labels.append(accepted_predictions[0].label)
+                    label_counts = Counter(recent_labels)
+                    confirmed_label, confirmed_count = label_counts.most_common(1)[0]
+                    if confirmed_count >= args.confirm_frames:
+                        display_predictions = [
+                            prediction
+                            for prediction in accepted_predictions
+                            if prediction.label == confirmed_label
+                        ]
+                    else:
+                        display_predictions = []
+                else:
+                    recent_labels.clear()
+                    display_predictions = []
 
             now = time.monotonic()
             elapsed = now - last_time
@@ -825,21 +1190,22 @@ def run_live_classifier(args: argparse.Namespace) -> int:
                 fps = 0.9 * fps + 0.1 * (1.0 / elapsed) if fps else 1.0 / elapsed
             last_time = now
 
-            smoothed = smooth_label(recent_labels) if recent_labels else None
+            smoothed = smooth_label(recent_labels) if display_predictions and recent_labels else None
             if args.headless:
-                current_summary = format_headless_predictions(last_predictions)
+                current_summary = format_headless_predictions(display_predictions)
                 if current_summary != last_printed_summary:
                     print(f"Detected: {current_summary}", flush=True)
                     last_printed_summary = current_summary
             else:
                 draw_prediction_overlay(
                     frame_bgr,
-                    last_predictions,
+                    display_predictions,
                     smoothed,
                     fps,
                     args.detection_mode,
                     args.crop_mode,
                     args.crop_scale,
+                    args.show_rejected,
                 )
                 cv2.imshow("Rover Object Classifier", frame_bgr)
                 if cv2.waitKey(1) & 0xFF == ord("q"):

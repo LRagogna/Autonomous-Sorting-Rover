@@ -103,8 +103,10 @@ mode.
 
 The preview window shows the camera feed, finds likely object regions, sends
 those cropped regions through the classifier, and draws a green box with the
-predicted label around each classified object. Press `q` in the preview window
-to quit.
+predicted label around each confirmed object. It now rejects the `background`
+class, rejects low-certainty crop votes, rejects boxes touching the camera edge,
+and waits for the same label across consecutive classification passes before
+drawing a green box. Press `q` in the preview window to quit.
 
 If you are connected over SSH or do not have a desktop preview:
 
@@ -125,21 +127,21 @@ CPU fallback uses:
 ```text
 models/object_classifier.yml
 models/object_classifier_metadata.json
-models/wrench_override.yml
-models/wrench_override_metadata.json
 ```
 
-The wrench override files are optional in CPU mode, but recommended. If they are
-present, the CPU classifier uses them automatically.
+The optional wrench override files are still available, but CPU live mode does
+not use them by default because the current HOG-based multiclass model tested
+better without the override. Use `--enable-wrench-override` only for comparison.
 
 Useful runtime options:
 
 ```bash
 ./scripts/run_pi_classifier.sh --width 640 --height 480
-./scripts/run_pi_classifier.sh --max-objects 3
-./scripts/run_pi_classifier.sh --min-object-area-ratio 0.005
+./scripts/run_pi_classifier.sh --confirm-frames 3
+./scripts/run_pi_classifier.sh --min-vote-fraction 0.67
+./scripts/run_pi_classifier.sh --show-rejected
 ./scripts/run_pi_classifier.sh --box-padding 24
-./scripts/run_pi_classifier_cpu.sh --disable-wrench-override
+./scripts/run_pi_classifier_cpu.sh --enable-wrench-override
 ```
 
 By default, live mode uses `--detection-mode objects`. OpenCV only does the
@@ -280,6 +282,21 @@ Then train from the processed dataset:
 
 ```bash
 python ml/train_classifier.py --dataset processed
+```
+
+To reduce false detections on the camera background, generate a `background`
+class from raw frame corners before training:
+
+```bash
+python data/generate_background_samples.py --overwrite
+python ml/train_classifier.py --dataset processed
+```
+
+Backtest the live filter against raw camera frames and generated background
+crops:
+
+```bash
+python ml/backtest_live_filter.py --positive-dir data/raw/photos
 ```
 
 Optional representative examples can go in:
