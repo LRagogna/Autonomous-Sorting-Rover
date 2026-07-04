@@ -1,5 +1,0 @@
-0 background
-1 bit
-2 steel_tape
-3 wire
-4 wrench

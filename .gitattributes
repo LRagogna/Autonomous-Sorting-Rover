@@ -1,6 +1,12 @@
 data/** filter=lfs diff=lfs merge=lfs -text
-data/extract_video_frames.py -filter -diff -merge text
-data/prepare_classification_dataset.py -filter -diff -merge text
+data/*.py -filter -diff -merge text
 data/**/.gitkeep -filter -diff -merge text
+# YOLO label files and the dataset config are tiny text; keep them readable on
+# GitHub instead of storing them in Git LFS.
+data/processed/detection/labels/**/*.txt -filter -diff -merge text
+data/processed/detection/dataset.yaml -filter -diff -merge text
+# Hand-labeled box files, class lists, and notes are tiny text too.
+data/hand_labeled/**/*.txt -filter -diff -merge text
+data/hand_labeled/**/*.md -filter -diff -merge text
 docs/images/** filter=lfs diff=lfs merge=lfs -text
 docs/images/**/.gitkeep -filter -diff -merge text

@@ -175,3 +175,57 @@ git pull
 
 - Resolved a non-fast-forward push issue by fetching the latest GitHub commits, rebasing the local work on top of them, and pushing the updated `main` branch.
 - Confirmed the local branch and GitHub `main` branch were synced after the push.
+
+## July 4, 2026
+
+### Switched Vision From Classifier To YOLO Object Detector
+
+- Replaced the old OpenCV SVM/HOG classifier and Coral pipeline with a proper YOLO object detector. The old approach only guessed one label for a whole crop and never drew a real box around the object; YOLO draws a tight box.
+- Added `ultralytics` (which pulls in PyTorch) to `requirements.txt` for training and inference.
+
+### New Three-Step Detection Pipeline
+
+- `data/auto_label_frames.py`: reads `data/labels/object_classes.txt` and automatically draws a bounding box around the object in every extracted frame using OpenCV GrabCut (with a brightness/darkness fallback for the darker bit). It writes a YOLO dataset to `data/processed/detection/` (images, labels, `dataset.yaml`) plus a `review/` folder of annotated previews for human spot-checking. Train/val is split by video clip so near-identical frames do not cross the split.
+- `ml/train_yolo.py`: fine-tunes `yolov8n.pt` on the dataset and saves the result to `models/yolo_detector.pt`.
+- `src/desktop_yolo_detector.py` + `scripts/run_desktop_detector.sh`: live webcam detector that draws a green box, label, and confidence around each detected object. This is the on-computer "simulator" for the rover's eyes.
+
+### Data And Repo Cleanup
+
+- Restructured `data/` around the YOLO dataset. Removed the obsolete classification crops (`data/processed/classification/`), external classifier references (`data/external/`), and `data/labels/object_classes.json` (the plain `object_classes.txt` is now the single source of truth for classes).
+- Removed the obsolete classifier code and artifacts: `ml/train_classifier.py`, `ml/train_coral_classifier.py`, `ml/edgetpu_classifier.py`, `ml/detect_objects.py`, `ml/backtest_live_filter.py`, `src/desktop_realtime_classifier.py`, `src/pi_realtime_classifier.py`, `data/prepare_classification_dataset.py`, `data/generate_background_samples.py`, the classifier runner scripts, and the old `models/object_classifier.*` and test-output files.
+- Kept the raw videos and photos as the dataset source of truth, plus `data/extract_video_frames.py` and `data/capture_webcam_training_images.py` for growing the dataset.
+- The pipeline is designed to scale: adding a new object is drop clips → extract → add a class line → re-label → retrain.
+- Updated `README.md` to document the new three-step workflow and how to add new objects. Kept `tests/rectangle_detect.py` as a separate color-detection proof of concept.
+
+### Raspberry Pi Note
+
+- The live detector currently targets a laptop/desktop webcam. Running YOLO on the Raspberry Pi (or exporting it for on-device speed) is a deliberate future step, not part of this desktop-simulator work.
+
+### First Live Test And Robustness Follow-up
+
+- Trained the first detector (40 epochs, Apple MPS): mAP50 ~0.85, and 12/12 held-out images boxed correctly.
+- Live webcam test showed missed and flickering boxes. Root cause: the training data only shows the object alone on the dark mat, so the model does not generalize to a hand-held object or busy/colored backgrounds (domain gap).
+- Quick tuning fix in `src/desktop_yolo_detector.py`: lowered default `--conf` to 0.25 and added box smoothing (`--smooth-frames`, default 6) so a box persists briefly after being lost instead of flickering.
+- Durable fix: added a hand-labeled data path for the hard scenes the auto-labeler cannot handle.
+  - New folder `data/hand_labeled/` with `classes.txt` and a step-by-step `README.md` (capture with the webcam, box with LabelImg in YOLO format, rebuild, retrain).
+  - `data/auto_label_frames.py` now also folds in any hand-labeled image+`.txt` pairs from `data/hand_labeled/`, remapping class ids by NAME using each folder's LabelImg `classes.txt` so ordering never matters. Hand-labeled files are tagged `hand__` in the dataset.
+  - Captured hand-held images go to `data/hand_labeled/` (via `capture_webcam_training_images.py --output-dir data/hand_labeled`), kept out of `data/raw/photos/` so the auto-labeler never tries to auto-box them.
+- Updated `README.md` with a "Make It Work On Hands And Different Backgrounds" section and `.gitattributes` to keep the hand-labeled text files readable (not LFS).
+
+### Internet Wrench Data And Scale (Distance) Robustness
+
+- Symptom: the detector recognized the wrench up close but poorly when it was far away (small in the frame).
+- Added `data/fetch_wrench_internet.py`: downloads real, already-boxed wrench pictures from Google Open Images (the "Wrench" class) via `fiftyone`, at many distances/backgrounds. Saves them into `data/hand_labeled/wrench_openimages/` so the builder folds them in automatically. Wrench only — the bit is too unusual to find online, so it stays trained on our own photos.
+- Open Images "Wrench" is a niche class: the train split yielded 62 images / 204 boxes. Dataset went to 385 wrench train boxes (mat + internet), with 62 internet images split into train/val (making val a harder, more honest benchmark).
+- `ml/train_yolo.py`: added a `--scale` option (default 0.8) so training randomly zooms pictures in/out, teaching the model to see each object at many sizes (helps far-away/small detection).
+- Retrained (40 epochs, MPS): wrench mAP50 0.74 / precision 0.94, bit mAP50 0.73. Raw mAP is not comparable to the earlier 0.85 because the val set is now much harder (internet images with piles of tiny wrenches).
+- Verified with a synthetic "far away" test (a wrench shrunk to 35%, 22%, and 14% of the frame): all three were detected, confirming the distance/scale problem is fixed.
+- Documented the workflow in `README.md` ("Add Internet Wrench Pictures") and noted `fiftyone` as an optional dependency in `requirements.txt`.
+
+### One-Command Retraining
+
+- Added `scripts/retrain.sh`: a single command that rebuilds the dataset from all source folders (`data/raw/photos` + `data/hand_labeled`) and then trains the detector, so adding more data is just "drop files in → run one script → test."
+- It uses the Apple GPU by default (`DEVICE=cpu ./scripts/retrain.sh` forces CPU) and passes extra options straight through (for example `./scripts/retrain.sh --epochs 60 --scale 0.9`).
+- Clarified the mental model for the user: the builder always rebuilds the dataset from every source folder, and `ml/train_yolo.py` always retrains from the pretrained base on the whole combined dataset, so new data is automatically learned together with old data (no manual merging, no forgetting).
+- Advised on data quantity: roughly 150-250 varied, in-domain (webcam) labeled images per object, prioritizing the bit, with variety (hands, several backgrounds, near/far, angles, lighting) mattering more than raw count.
+- Updated `README.md` with a "Retrain In One Command" section and added `scripts/retrain.sh` to the repository layout.
