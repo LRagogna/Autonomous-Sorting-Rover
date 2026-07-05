@@ -3,10 +3,18 @@ numpy>=1.24
 opencv-python>=4.8
 pyserial>=3.5
 
+# Object detection (YOLO) dependencies.
+# ultralytics is the YOLO training/inference library. Installing it also pulls in
+# PyTorch (torch), which is a large download. These are needed to build and run
+# the detector:
+#   data/auto_label_frames.py, ml/train_yolo.py, src/desktop_yolo_detector.py
+ultralytics>=8.4
+
+# Optional: download boxed wrench pictures from the internet (Open Images) with
+#   python data/fetch_wrench_internet.py
+# Only needed for that one script, so it is not a core dependency:
+#   pip install fiftyone
+
 # Raspberry Pi camera support is usually installed through Raspberry Pi OS:
 #   sudo apt install python3-picamera2
 # It is not listed as a pip dependency because Picamera2 depends on system camera packages.
-
-# Optional training/export tools:
-# - ml/train_coral_classifier.py needs TensorFlow on a development machine.
-# - Coral runtime/PyCoral and edgetpu_compiler are installed through Raspberry Pi OS/Debian packages.

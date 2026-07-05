@@ -6,7 +6,10 @@ Autonomous robotic rover that detects, collects, and sorts user-prompted items.
 
 This project is an early-stage autonomous sorting rover. The rover is being designed around a tank-style chassis, Raspberry Pi based control, camera-driven object recognition, and an electromagnet for collecting metal debris.
 
-The current proof of concept focuses on computer vision: using a Raspberry Pi camera and OpenCV to detect green objects in the camera feed.
+The current proof of concept focuses on computer vision. There are two vision pieces:
+
+1. A simple color test that draws boxes around green objects (`tests/rectangle_detect.py`).
+2. A **YOLO object detector** that learns your real objects (a wrench, a bit, and any objects you add later) and draws a **green box** around them in a live camera feed.
 
 ## Current Hardware Direction
 
@@ -14,7 +17,6 @@ The current proof of concept focuses on computer vision: using a Raspberry Pi ca
 - OV5647 Raspberry Pi camera for visual detection
 - Tank-style drive layout with each side moving together
 - Relay-controlled electromagnet for metal object pickup
-- Coral Edge TPU for accelerated object classification on the Pi
 
 ## Repository Layout
 
@@ -22,33 +24,78 @@ The current proof of concept focuses on computer vision: using a Raspberry Pi ca
 README.md
 requirements.txt
 data/
-  extract_video_frames.py
+  extract_video_frames.py        # turn videos into photos
+  auto_label_frames.py           # turn photos into a YOLO dataset (draws the boxes)
+  capture_webcam_training_images.py
   labels/
+    object_classes.txt           # the master list of objects: "id name"
   processed/
+    detection/                   # the YOLO dataset (created by auto_label_frames.py)
   raw/
-    photos/
-      washer/
-        pan_01.mp4/
-    videos/
-      washer/
-docs/
-  images/
-  progress_log.md
+    videos/<object>/<clip>       # original recorded clips
+    photos/<object>/<clip>/      # frames extracted from those clips
+ml/
+  train_yolo.py                  # train the detector
+models/
+  yolo_detector.pt               # the trained detector (created by train_yolo.py)
+src/
+  desktop_yolo_detector.py       # live webcam detector (draws the green boxes)
 scripts/
+  retrain.sh                     # one command: rebuild dataset + retrain
+  run_desktop_detector.sh
   setup_pi_sparse_checkout.sh
 tests/
-  rectangle_detect.py
+  rectangle_detect.py            # Raspberry Pi green-color detection proof of concept
 ```
 
-## Current Prototype
+## Retrain In One Command
 
-`tests/rectangle_detect.py` captures frames from the Raspberry Pi camera, converts them to HSV color space, thresholds for green objects, cleans the mask, finds contours, and draws bounding boxes around detected objects.
+Whenever you add more training data, rebuild the dataset and retrain with a
+single command:
 
-The script is intended to run on a Raspberry Pi with the camera connected.
+```bash
+./scripts/retrain.sh
+```
+
+This does everything for you: it **slices any new videos** in `data/raw/videos`
+into photos (already-sliced videos are skipped), **rebuilds the dataset** from all
+your source folders (old and new together), and **trains** the detector into
+`models/yolo_detector.pt`. Pass training options straight through, for example
+`./scripts/retrain.sh --epochs 60 --scale 0.9`, force the CPU with
+`DEVICE=cpu ./scripts/retrain.sh`, or keep more frames per video with
+`FRAME_STEP=10 ./scripts/retrain.sh`.
+
+So if you record a new clip, you can just drop the video file into
+`data/raw/videos/<object>/` and run `./scripts/retrain.sh` — no separate extract
+step needed.
+
+## The Vision Pipeline In Steps
+
+The one command above is just these steps in a row. The detector learns from your
+own photos:
+
+```bash
+# 1. Turn your videos into photos (skip if you already have photos)
+python data/extract_video_frames.py --all --frame-step 15
+
+# 2. Draw a box around the object in every photo and build the YOLO dataset
+python data/auto_label_frames.py --overwrite
+
+# 3. Train the detector
+python ml/train_yolo.py
+```
+
+Then run the live detector on your computer:
+
+```bash
+./scripts/run_desktop_detector.sh
+```
+
+Hold a wrench or a bit in front of your webcam. When the model is confident, a green box with the object's name appears around it. Press `q` to quit.
 
 ## Setup Notes
 
-Install Python dependencies:
+Install Python dependencies (this includes `ultralytics` and PyTorch, which is a large download):
 
 ```bash
 pip install -r requirements.txt
@@ -60,346 +107,205 @@ On Raspberry Pi OS, install Picamera2 through the system package manager:
 sudo apt install python3-picamera2
 ```
 
-For the live classifier on Raspberry Pi, the system OpenCV package is usually
-the easiest path:
-
-```bash
-sudo apt install python3-picamera2 python3-opencv python3-numpy
-```
-
-For Coral TPU inference, also install the Coral runtime/PyCoral package on the
-Pi:
-
-```bash
-sudo apt install python3-pycoral
-```
-
-The Coral model is trained/exported with TensorFlow on a development machine.
-TensorFlow is intentionally not in `requirements.txt` because it is too large
-for the normal Raspberry Pi runtime setup:
-
-```bash
-python3 -m pip install tensorflow
-```
-
-## Run the Vision Test
-
-```bash
-python tests/rectangle_detect.py
-```
-
-Press `q` to quit the camera preview windows.
-
-## Run The Live Object Classifier On Raspberry Pi
-
-The default Pi classifier command is Coral-required:
-
-```bash
-./scripts/run_pi_classifier.sh
-```
-
-It expects an Edge-TPU-compiled TensorFlow Lite model at:
-
-```text
-models/object_classifier_edgetpu.tflite
-models/object_classifier_labels.txt
-```
-
-If that compiled `.tflite` file is missing, the command fails instead of
-silently using the CPU. This is intentional, so Coral mode really means Coral
-mode.
-
-The preview window shows the camera feed, finds likely object regions, sends
-those cropped regions through the classifier, and draws a green box with the
-predicted label around each confirmed object. It now rejects the `background`
-class, rejects low-certainty crop votes, rejects boxes touching the camera edge,
-and waits for the same label across consecutive classification passes before
-drawing a green box. Press `q` in the preview window to quit.
-
-If you are connected over SSH or do not have a desktop preview:
-
-```bash
-./scripts/run_pi_classifier.sh --headless
-```
-
-Headless mode prints the detected label whenever it changes.
-
-The current OpenCV SVM model can still run as a CPU fallback:
-
-```bash
-./scripts/run_pi_classifier_cpu.sh
-```
-
-CPU fallback uses:
-
-```text
-models/object_classifier.yml
-models/object_classifier_metadata.json
-```
-
-The optional wrench override files are still available, but CPU live mode does
-not use them by default because the current HOG-based multiclass model tested
-better without the override. Use `--enable-wrench-override` only for comparison.
-
-Useful runtime options:
-
-```bash
-./scripts/run_pi_classifier.sh --width 640 --height 480
-./scripts/run_pi_classifier.sh --confirm-frames 3
-./scripts/run_pi_classifier.sh --min-vote-fraction 0.67
-./scripts/run_pi_classifier.sh --show-rejected
-./scripts/run_pi_classifier.sh --box-padding 24
-./scripts/run_pi_classifier_cpu.sh --enable-wrench-override
-```
-
-By default, live mode uses `--detection-mode objects`. OpenCV only does the
-lightweight candidate-box proposal work; the actual classification inference is
-done by the Coral Edge TPU when you use `./scripts/run_pi_classifier.sh`.
-Use `--detection-mode frame` only if you want the older whole-frame behavior for
-debugging.
-
-## Extract Training Images From Video
+## Step 1: Extract Training Photos From Video
 
 Place source videos in object-specific folders under `data/raw/videos/`:
 
 ```text
-data/raw/videos/washer/pan_01.mp4
-data/raw/videos/washer/pan_02.mp4
+data/raw/videos/wrench/clip_01.MOV
+data/raw/videos/bit/clip_01.MOV
 ```
 
-Then run:
-
-```bash
-python data/extract_video_frames.py washer pan_01.mp4
-```
-
-This looks for the video in `data/raw/videos/washer/` and writes frames to:
-
-```text
-data/raw/photos/washer/pan_01.mp4/
-```
-
-Each video gets its own photo folder, so frames from different pans, positions, and lighting conditions stay grouped by source video.
-
-By default, every frame is saved as a PNG. To save fewer frames, use `--frame-step`:
-
-```bash
-python data/extract_video_frames.py washer pan_01.mp4 --frame-step 10
-```
-
-To process every video under `data/raw/videos/`, use:
+Then extract frames from every video at once:
 
 ```bash
 python data/extract_video_frames.py --all --frame-step 15
 ```
 
-Batch mode skips videos that already have extracted photos in their matching output folder. For example, this video:
+At roughly 30 FPS, `--frame-step 15` saves about 2 frames per second. Photos are written to `data/raw/photos/<object>/<clip>/`. Batch mode skips videos that already have photos, so you can add new clips over time and rerun it.
+
+You can also capture photos straight from your webcam:
+
+```bash
+python data/capture_webcam_training_images.py wrench --auto-save --max-images 80
+```
+
+## Step 2: Auto-Label The Photos (Build The YOLO Dataset)
+
+A YOLO detector needs to know **where** the object is in each photo, not just what it is. Because the objects sit on a plain, high-contrast mat, `data/auto_label_frames.py` can find the object and draw the box for you:
+
+```bash
+python data/auto_label_frames.py --overwrite
+```
+
+This reads the class list in `data/labels/object_classes.txt` and writes a ready-to-train dataset to:
 
 ```text
-data/raw/videos/washer/pan_01.mp4
+data/processed/detection/
+  dataset.yaml            # class names + folders, for YOLO
+  images/train/           # most photos, used for learning
+  images/val/             # a few photos, used for checking
+  labels/train/           # one box file per training photo
+  labels/val/             # one box file per check photo
+  review/                 # the same photos with the box drawn on, for a human to check
 ```
 
-is skipped if this folder already contains image files:
+**Always spot-check `data/processed/detection/review/`.** Open a handful of images and confirm the green boxes hug the object. If a class looks wrong, delete those photos or adjust the padding and re-run:
+
+```bash
+python data/auto_label_frames.py --overwrite --pad 0.1
+```
+
+The dataset is split by video clip, so near-identical frames from one clip never end up in both the training and check sets.
+
+## Step 3: Train The Detector
+
+```bash
+python ml/train_yolo.py
+```
+
+This fine-tunes a small pretrained model (`yolov8n.pt`, "nano" = smallest/fastest). On a normal laptop CPU with a small dataset it finishes in a few minutes. The first run downloads the ~6 MB starter model, so you need internet once.
+
+The trained detector is saved to:
 
 ```text
-data/raw/photos/washer/pan_01.mp4/
+models/yolo_detector.pt
 ```
 
-## Train And Validate A Starter Classifier
-
-The first training pipeline lives in:
+Useful options:
 
 ```bash
-python ml/train_classifier.py
+python ml/train_yolo.py --epochs 60     # train longer for tighter boxes
+python ml/train_yolo.py --imgsz 512     # smaller pictures = faster, rougher
+python ml/train_yolo.py --batch 4       # lower if you run out of memory
 ```
 
-It trains a small OpenCV SVM classifier and validates it before saving model files. This is meant as a lightweight starter model while the dataset is still small.
+## Step 4: Run The Live Detector On Your Computer
 
-The script can use either processed classification folders:
+```bash
+./scripts/run_desktop_detector.sh
+```
+
+This opens your computer's default webcam, runs the trained detector on each frame, and draws a green box with the object's name and confidence. Press `q` to quit.
+
+Useful options:
+
+```bash
+./scripts/run_desktop_detector.sh --camera-index 1   # use a second camera
+./scripts/run_desktop_detector.sh --conf 0.15        # show more (shakier) boxes
+./scripts/run_desktop_detector.sh --conf 0.5         # only very confident boxes
+./scripts/run_desktop_detector.sh --smooth-frames 0  # turn off box smoothing
+./scripts/run_desktop_detector.sh --headless         # no window; print detections
+```
+
+The detector lowers shaky boxes with two helpers: a confidence cutoff (`--conf`)
+and box smoothing, which keeps a box on screen for a few frames after it is lost
+so it does not flicker.
+
+On macOS, if OpenCV says camera access was denied, allow your terminal app under:
 
 ```text
-data/processed/classification/
-  train/
-    washer/
-      image_001.png
-    bolt/
-      image_001.png
-  val/
-    washer/
-      image_002.png
-    bolt/
-      image_002.png
+System Settings > Privacy & Security > Camera
 ```
 
-or raw extracted frames:
+## Make It Work On Hands And Different Backgrounds
 
-```text
-data/raw/photos/
-  washer/
-    pan_01.mp4/
-      frame_000000.png
-  bolt/
-    pan_01.mp4/
-      frame_000000.png
-```
+The automatic labeler only works when the object sits alone on a plain
+background, so the trained model is best at that. If the detector struggles when
+you **hold the object in your hand** or use a **busy or colored background**, the
+fix is to add training pictures of those exact situations and box them by hand.
 
-When using raw extracted frames, the trainer splits by source video folder instead of randomly mixing individual frames. That keeps similar frames from the same video from appearing in both training and validation.
+Full step-by-step instructions are in `data/hand_labeled/README.md`. In short:
 
-Run with raw extracted frames:
+1. Capture varied webcam pictures (hand-held, different backgrounds, lighting):
+
+   ```bash
+   python data/capture_webcam_training_images.py wrench --output-dir data/hand_labeled --auto-save --max-images 120
+   python data/capture_webcam_training_images.py bit    --output-dir data/hand_labeled --auto-save --max-images 120
+   ```
+
+2. Draw boxes on them with LabelImg (a free desktop app), saving in **YOLO**
+   format:
+
+   ```bash
+   pip install labelImg
+   labelImg
+   ```
+
+3. Rebuild and retrain. The builder automatically folds in every hand-labeled
+   picture alongside the plain-background ones:
+
+   ```bash
+   python data/auto_label_frames.py --overwrite
+   python ml/train_yolo.py
+   ```
+
+Repeat the loop (capture more variety, label, retrain) until it recognizes the
+objects in the conditions you care about.
+
+## Add Internet Wrench Pictures (Better At A Distance)
+
+Our own photos are all close-up, so the detector can be weak on a wrench that is
+far away (small in the frame). Google's free **Open Images** dataset has thousands
+of real wrench pictures at many distances and backgrounds, each already boxed.
+Download a batch (wrench only — the bit is too unusual to find online):
 
 ```bash
-python ml/train_classifier.py --dataset raw
+pip install fiftyone
+python data/fetch_wrench_internet.py --max-samples 600
 ```
 
-Run with a prepared train/validation dataset:
+This saves boxed wrench pictures into `data/hand_labeled/wrench_openimages/`, so
+they fold into the dataset automatically. Then rebuild and retrain:
 
 ```bash
-python ml/train_classifier.py --dataset processed
+python data/auto_label_frames.py --overwrite
+python ml/train_yolo.py
 ```
 
-The trainer needs at least two object classes and validation images for each class. If no usable dataset exists yet, it exits with setup instructions instead of creating a bad model.
-
-Successful training writes:
-
-```text
-models/object_classifier.yml
-models/object_classifier_metadata.json
-models/object_classifier_metrics.json
-models/object_classifier_validation.csv
-```
-
-## Prepare A Cleaner Classification Dataset
-
-Raw extracted frames can include a lot of background and repeated near-identical
-frames. To build a cleaner train/validation dataset from all extracted frames,
-run:
+Training also randomly zooms pictures in and out (the `--scale` option, default
+0.8) so the model learns each object at many sizes. To push size variety even
+harder:
 
 ```bash
-python data/prepare_classification_dataset.py --overwrite
+python ml/train_yolo.py --scale 0.9
 ```
 
-This writes balanced cropped images to:
+## How To Add A New Object To Recognize
 
-```text
-data/processed/classification/
-  train/
-  val/
-```
+The pipeline is built to grow. To teach the rover a new object (for example, a washer):
 
-Then train from the processed dataset:
+1. Record short videos into `data/raw/videos/washer/`.
+2. Extract photos: `python data/extract_video_frames.py --all --frame-step 15`
+3. Add one line to `data/labels/object_classes.txt`, for example:
+
+   ```text
+   0 bit
+   1 wrench
+   2 washer
+   ```
+
+4. Rebuild the dataset: `python data/auto_label_frames.py --overwrite`
+5. Retrain: `python ml/train_yolo.py`
+
+The new object will now get its own green box in the live detector.
+
+## Color Detection Proof Of Concept
+
+`tests/rectangle_detect.py` is a separate, simpler Raspberry Pi camera test. It captures frames, converts them to HSV color space, thresholds for green pixels, cleans the mask, finds contours, and draws boxes around green objects. It is intended to run on a Raspberry Pi with the camera connected:
 
 ```bash
-python ml/train_classifier.py --dataset processed
+python tests/rectangle_detect.py
 ```
 
-To reduce false detections on the camera background, generate a `background`
-class from raw frame corners before training:
-
-```bash
-python data/generate_background_samples.py --overwrite
-python ml/train_classifier.py --dataset processed
-```
-
-Backtest the live filter against raw camera frames and generated background
-crops:
-
-```bash
-python ml/backtest_live_filter.py --positive-dir data/raw/photos
-```
-
-## Build The Coral TPU Classifier
-
-The OpenCV `.yml` model cannot run on the Coral TPU. To make the classifier file
-that actually runs the heavy neural-network inference on Coral, train and export
-the TensorFlow Lite model:
-
-```bash
-python ml/train_coral_classifier.py --epochs 30
-```
-
-This writes:
-
-```text
-models/object_classifier_coral.keras
-models/object_classifier.tflite
-models/object_classifier_edgetpu.tflite
-models/object_classifier_labels.txt
-```
-
-`models/object_classifier_edgetpu.tflite` is the file used by:
-
-```bash
-./scripts/run_pi_classifier.sh
-```
-
-If `edgetpu_compiler` is missing, install it on a Linux development machine or
-the Raspberry Pi:
-
-```bash
-sudo apt install edgetpu-compiler
-```
-
-Optional representative examples can go in:
-
-```text
-data/external/classification/<label>/
-```
-
-For example, flat product-style wrench references can go in:
-
-```text
-data/external/classification/wrench/
-```
-
-After training the main classifier, train the targeted wrench override model:
-
-```bash
-python ml/train_wrench_override.py
-```
-
-This trains a small binary wrench-vs-not-wrench model. During detection, it can
-correct common mistakes where a wrench is first classified as `wire` or
-`steel_tape`.
-
-## Detect Objects In Pictures
-
-After training, classify one picture:
-
-```bash
-python ml/detect_objects.py path/to/image.jpg
-```
-
-Classify a folder of pictures:
-
-```bash
-python ml/detect_objects.py path/to/folder --recursive
-```
-
-The detector writes:
-
-```text
-models/object_detections.csv
-models/object_detections_summary.json
-models/annotated_detections/
-```
-
-This starter detector predicts one object label for the whole picture. It does
-not yet draw a tight box around the object. If `models/wrench_override.yml`
-exists, the detector uses it automatically. To compare the raw multiclass
-prediction without that override, run:
-
-```bash
-python ml/detect_objects.py path/to/image.jpg --disable-wrench-override
-```
+Press `q` to quit.
 
 ## Documentation Images
 
-Project documentation pictures should go in date-labeled folders under `docs/images/`. Use a filename-safe date format with dashes:
+Project documentation pictures go in date-labeled folders under `docs/images/`. Use a filename-safe date format with dashes:
 
 ```text
-docs/images/2026-06-19/
-  pi-cooling.jpg
-  relay-test.jpg
+docs/images/2026-06-19/pi-cooling.jpg
 ```
 
 Then reference them from Markdown like:
@@ -412,7 +318,7 @@ Images under `docs/images/` are tracked with Git LFS and are excluded from the R
 
 ## Dataset Storage
 
-Everything under `data/` and `docs/images/` is tracked with Git LFS so the dataset and documentation images can be visible on GitHub without making every clone or pull download all of the large files immediately.
+Everything under `data/` and `docs/images/` is tracked with Git LFS so the dataset and documentation images can be visible on GitHub without making every clone download all of the large files immediately. Small text files (the frame-extractor code, `.gitkeep` placeholders, YOLO label `.txt` files, and `dataset.yaml`) are kept as normal text so they read normally on GitHub.
 
 On development machines that should download dataset files normally, use:
 
@@ -438,14 +344,7 @@ git sparse-checkout set "/*" "!/data/" "!/docs/images/"
 git pull
 ```
 
-This keeps the dataset and documentation images visible on GitHub while keeping the Raspberry Pi checkout focused on runtime code and lightweight text docs. The LFS fetch exclusion also prevents the Pi from downloading files under `data/` during normal LFS operations.
-
-If the Raspberry Pi needs dataset files later, disable sparse checkout first and then pull the specific LFS paths:
-
-```bash
-git sparse-checkout disable
-git lfs pull --include="data/raw/photos/washer/**"
-```
+This keeps the dataset visible on GitHub while keeping the Raspberry Pi checkout focused on runtime code and lightweight text docs.
 
 ## Development Status
 
@@ -453,8 +352,9 @@ See `docs/progress_log.md` for dated project progress. Current work is focused o
 
 Near-term goals:
 
-1. Tune camera detection under different lighting.
-2. Add shape detection in addition to color detection.
-3. Build a motor driver proof of concept.
-4. Validate electromagnet activation with final hardware.
-5. Define a simple rover state machine for search, approach, pickup, and release.
+1. Grow the detection dataset with more objects and lighting conditions.
+2. Tune the YOLO detector for reliable boxes on the rover's real camera.
+3. Run the detector on the Raspberry Pi (or export it for on-device speed).
+4. Build a motor driver proof of concept.
+5. Validate electromagnet activation with final hardware.
+6. Define a simple rover state machine for search, approach, pickup, and release.

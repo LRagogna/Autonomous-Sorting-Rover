@@ -1,9 +1,0 @@
-{
-  "total_images": 1,
-  "majority_prediction": "wrench",
-  "majority_count": 1,
-  "majority_fraction": 1.0,
-  "counts": {
-    "wrench": 1
-  }
-}
