@@ -12,13 +12,13 @@ set -euo pipefail
 # dataset, documentation media, CAD, or model-training artifacts on the Pi.
 
 git lfs install --local --skip-smudge
-git config --local lfs.fetchexclude 'data/**,docs/**,solidworks/**,ml/**,models/**,tests/**,yolov8n.pt'
+git config --local lfs.fetchexclude 'data/**,docs/**,solidworks/**,ml/**,models/**,tests/**,requirements.txt,yolov8n.pt'
 git sparse-checkout init --no-cone
 git sparse-checkout set \
   '/.gitattributes' \
   '/.gitignore' \
   '/README.md' \
-  '/requirements.txt' \
+  '/requirements-pi.txt' \
   '/scripts/setup_pi_sparse_checkout.sh' \
   '/src/main.py' \
   '/src/serial_drive_turns.ino' \

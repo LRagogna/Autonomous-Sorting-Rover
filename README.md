@@ -95,10 +95,17 @@ Hold a wrench or a bit in front of your webcam. When the model is confident, a g
 
 ## Setup Notes
 
-Install Python dependencies (this includes `ultralytics` and PyTorch, which is a large download):
+On a development computer, install the desktop/ML Python dependencies with:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Do not run that file on the Raspberry Pi. The Pi runtime dependency file is
+small:
+
+```bash
+pip install -r requirements-pi.txt
 ```
 
 On Raspberry Pi OS, install Picamera2 through the system package manager:
@@ -129,7 +136,7 @@ That script allowlists only:
 .gitattributes
 .gitignore
 README.md
-requirements.txt
+requirements-pi.txt
 scripts/setup_pi_sparse_checkout.sh
 src/main.py
 src/serial_drive_turns.ino
@@ -139,7 +146,8 @@ ros2_ws/src/
 ```
 
 It also tells Git LFS not to fetch `data/`, `docs/`, `solidworks/`, `ml/`,
-`models/`, `tests/`, or the base YOLO weights during normal Pi pulls.
+`models/`, `tests/`, the computer `requirements.txt`, or the base YOLO weights
+during normal Pi pulls.
 
 ## Step 1: Extract Training Photos From Video
 
@@ -352,14 +360,14 @@ Images under `docs/images/` are tracked with Git LFS and are excluded from the R
 
 ## Dataset, CAD, And Documentation Storage
 
-Everything under `data/`, `docs/images/`, and `solidworks/` is tracked with Git
-LFS so datasets, documentation media, and CAD/export files can be visible on
-GitHub without making every clone download all large files immediately. Common
-SolidWorks/CAD extensions (`.sldprt`, `.sldasm`, `.slddrw`, `.stl`, `.step`,
-and `.stp`, including uppercase variants) are also tracked with LFS wherever
-they are added. Small text files (the frame-extractor code, `.gitkeep`
-placeholders, YOLO label `.txt` files, and `dataset.yaml`) are kept as normal
-text so they read normally on GitHub.
+Everything under `data/`, `docs/images/`, and `solidworks/`, plus the computer
+`requirements.txt`, is tracked with Git LFS so datasets, documentation media,
+CAD/export files, and desktop dependency lists can stay out of the Pi runtime
+checkout. Common SolidWorks/CAD extensions (`.sldprt`, `.sldasm`, `.slddrw`,
+`.stl`, `.step`, and `.stp`, including uppercase variants) are also tracked
+with LFS wherever they are added. Small text files (the frame-extractor code,
+`.gitkeep` placeholders, YOLO label `.txt` files, `dataset.yaml`, and
+`requirements-pi.txt`) are kept as normal text so they read normally on GitHub.
 
 On development machines that should download dataset files normally, use:
 
@@ -381,13 +389,13 @@ before pulling:
 
 ```bash
 git lfs install --local --skip-smudge
-git config --local lfs.fetchexclude "data/**,docs/**,solidworks/**,ml/**,models/**,tests/**,yolov8n.pt"
+git config --local lfs.fetchexclude "data/**,docs/**,solidworks/**,ml/**,models/**,tests/**,requirements.txt,yolov8n.pt"
 git sparse-checkout init --no-cone
 git sparse-checkout set \
   "/.gitattributes" \
   "/.gitignore" \
   "/README.md" \
-  "/requirements.txt" \
+  "/requirements-pi.txt" \
   "/scripts/setup_pi_sparse_checkout.sh" \
   "/src/main.py" \
   "/src/serial_drive_turns.ino" \
