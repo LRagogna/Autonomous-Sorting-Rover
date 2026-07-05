@@ -120,8 +120,9 @@ The Raspberry Pi should be a runtime checkout, not a development or training
 checkout. Today, ML training does **not** run on the Pi: videos, datasets,
 auto-labeling, YOLO training, desktop detector experiments, model run outputs,
 CAD files, and project docs stay on a development machine. The Pi currently
-needs only the control entry point, Arduino sketch, ROS 2 control source, and
-small setup/config files used to operate or update those pieces.
+needs only the control entry point, Arduino sketch, ROS 2 control source, the
+Raspberry Pi hardware tests, and small setup/config files used to operate or
+update those pieces.
 
 Configure the Pi checkout once:
 
@@ -140,14 +141,15 @@ requirements-pi.txt
 scripts/setup_pi_sparse_checkout.sh
 src/main.py
 src/serial_drive_turns.ino
+tests/
 ros2_ws/README.md
 ros2_ws/rover_env.sh
 ros2_ws/src/
 ```
 
 It also tells Git LFS not to fetch `data/`, `docs/`, `solidworks/`, `ml/`,
-`models/`, `tests/`, the computer `requirements.txt`, or the base YOLO weights
-during normal Pi pulls.
+`models/`, the computer `requirements.txt`, or the base YOLO weights during
+normal Pi pulls.
 
 ## Step 1: Extract Training Photos From Video
 
@@ -389,7 +391,7 @@ before pulling:
 
 ```bash
 git lfs install --local --skip-smudge
-git config --local lfs.fetchexclude "data/**,docs/**,solidworks/**,ml/**,models/**,tests/**,requirements.txt,yolov8n.pt"
+git config --local lfs.fetchexclude "data/**,docs/**,solidworks/**,ml/**,models/**,requirements.txt,yolov8n.pt"
 git sparse-checkout init --no-cone
 git sparse-checkout set \
   "/.gitattributes" \
@@ -399,6 +401,7 @@ git sparse-checkout set \
   "/scripts/setup_pi_sparse_checkout.sh" \
   "/src/main.py" \
   "/src/serial_drive_turns.ino" \
+  "/tests/" \
   "/ros2_ws/README.md" \
   "/ros2_ws/rover_env.sh" \
   "/ros2_ws/src/"
@@ -406,8 +409,8 @@ git pull
 ```
 
 This keeps the dataset, documentation media, CAD files, ML training workspace,
-model run outputs, and desktop/test tools visible in the repository while
-keeping the Raspberry Pi checkout focused on operational rover code.
+model run outputs, and desktop tools visible in the repository while keeping
+the Raspberry Pi checkout focused on operational rover code and hardware tests.
 
 ## Development Status
 
