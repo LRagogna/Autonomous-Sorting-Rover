@@ -109,31 +109,12 @@ DATASET_DIR = PROJECT_ROOT / "data" / "labels"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 
 
-# Some source clips are too hard for automatic labeling, so we leave the whole
-# clip out of the dataset. Two kinds of clips fail:
-#   1. Low-light shots on a dark, wrinkled blanket, where shadows look like the
-#      object (the IMG_1929-1933 bit clips).
-#   2. Busy webcam shots where a face and room fill the frame and the object is
-#      small and off to the side, so the auto-labeler boxes the face instead of
-#      the object (the webcam wrench clips).
-# Auto-labeling works best on a plain, uncluttered background with the object
-# near the middle. To use a clip again, delete its name from this list and
-# re-run. To exclude a new bad clip, add its folder name (the same name shown in
+# Every clip is processed and every auto-boxed frame starts as "Pass" in the
+# review gallery. Frames that the auto-labeler gets wrong can be moved to the
+# "Fail" tab in the GUI, which pulls them out of training. If you ever want to
+# skip an entire clip up front, add its folder name here (the same name shown in
 # data/raw/photos/<object>/).
-IGNORE_CLIPS = {
-    "IMG_1929",
-    "IMG_1929.MOV",
-    "IMG_1930",
-    "IMG_1930.MOV",
-    "IMG_1931",
-    "IMG_1931.MOV",
-    "IMG_1932",
-    "IMG_1932.MOV",
-    "IMG_1933",
-    "IMG_1933.MOV",
-    "webcam_20260703_215357",
-    "webcam_20260704_112722",
-}
+IGNORE_CLIPS: set[str] = set()
 
 
 def load_classes() -> dict[str, int]:
@@ -505,8 +486,10 @@ def write_dataset_yaml(class_names_in_order: list[str]) -> None:
     )
     text = (
         "# This file tells YOLO where the pictures are and what the classes are.\n"
-        "# 'path' is relative to this YAML file, so it works after moving the repo.\n"
-        "path: .\n"
+        "# 'path' is an absolute folder so training works no matter which folder\n"
+        "# the training command is run from. It is rewritten every time you\n"
+        "# process data, so it stays correct after moving the repo.\n"
+        f"path: {DATASET_DIR.resolve().as_posix()}\n"
         "train:\n"
         f"{train_block}\n"
         "val:\n"

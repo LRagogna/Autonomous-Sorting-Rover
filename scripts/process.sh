@@ -27,9 +27,20 @@ FRAME_STEP="${FRAME_STEP:-15}"
 echo "==> Splitting new clips in data/raw/clips into JPG frames..."
 "$PY" data/extract_video_frames.py --all --frame-step "$FRAME_STEP" --image-format jpg
 
+# Remove iCloud "conflict copy" duplicate frames (e.g. "..._000000 2.jpg") BEFORE
+# labeling, so duplicates never get folded into the training dataset.
+echo ""
+echo "==> Removing any iCloud duplicate frames..."
+./scripts/clean_icloud_dupes.sh || true
+
 echo ""
 echo "==> Processing new frames into YOLO labels and review images..."
 "$PY" data/auto_label_frames.py --incremental "$@"
+
+# Sweep any duplicate files/folders iCloud created while the dataset was rewritten.
+echo ""
+echo "==> Cleaning up any iCloud duplicates created during processing..."
+./scripts/clean_icloud_dupes.sh || true
 
 echo ""
 echo "==> Processed data is in data/labels/"

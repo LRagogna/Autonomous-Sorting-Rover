@@ -12,10 +12,11 @@
     },
     "bit/IMG_1298.MOV": {
       "clip_stem": "IMG_1298",
-      "frame_step": null,
       "object": "bit",
       "path": "data/raw/clips/bit/IMG_1298.MOV",
-      "saved_images": 71,
+      "processed_frames": 68,
+      "seen_frames": 72,
+      "skipped_frames": 4,
       "status": "dataset",
       "video": "IMG_1298.MOV"
     },
@@ -31,21 +32,73 @@
     },
     "bit/IMG_1300.MOV": {
       "clip_stem": "IMG_1300",
-      "frame_step": null,
       "object": "bit",
       "path": "data/raw/clips/bit/IMG_1300.MOV",
-      "saved_images": 66,
+      "processed_frames": 67,
+      "seen_frames": 67,
+      "skipped_frames": 0,
       "status": "dataset",
       "video": "IMG_1300.MOV"
     },
     "bit/IMG_1301.MOV": {
       "clip_stem": "IMG_1301",
-      "frame_step": null,
       "object": "bit",
       "path": "data/raw/clips/bit/IMG_1301.MOV",
-      "saved_images": 67,
+      "processed_frames": 68,
+      "seen_frames": 68,
+      "skipped_frames": 0,
       "status": "dataset",
       "video": "IMG_1301.MOV"
+    },
+    "bit/IMG_1929.MOV": {
+      "clip_stem": "IMG_1929",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1929.MOV",
+      "processed_frames": 16,
+      "seen_frames": 17,
+      "skipped_frames": 1,
+      "status": "dataset",
+      "video": "IMG_1929.MOV"
+    },
+    "bit/IMG_1930.MOV": {
+      "clip_stem": "IMG_1930",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1930.MOV",
+      "processed_frames": 13,
+      "seen_frames": 13,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1930.MOV"
+    },
+    "bit/IMG_1931.MOV": {
+      "clip_stem": "IMG_1931",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1931.MOV",
+      "processed_frames": 2,
+      "seen_frames": 8,
+      "skipped_frames": 6,
+      "status": "dataset",
+      "video": "IMG_1931.MOV"
+    },
+    "bit/IMG_1932.MOV": {
+      "clip_stem": "IMG_1932",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1932.MOV",
+      "processed_frames": 2,
+      "seen_frames": 10,
+      "skipped_frames": 8,
+      "status": "dataset",
+      "video": "IMG_1932.MOV"
+    },
+    "bit/IMG_1933.MOV": {
+      "clip_stem": "IMG_1933",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1933.MOV",
+      "processed_frames": 5,
+      "seen_frames": 8,
+      "skipped_frames": 3,
+      "status": "dataset",
+      "video": "IMG_1933.MOV"
     },
     "wrench/IMG_1292.MOV": {
       "clip_stem": "IMG_1292",

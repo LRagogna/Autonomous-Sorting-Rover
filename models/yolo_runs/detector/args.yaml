@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: yolov8n.pt
-data: /Users/leonardoragogna/Desktop/AutonomousRover/data/processed/detection/dataset.yaml
+data: /Users/leonardoragogna/Desktop/AutonomousRover/data/labels/dataset.yaml
 epochs: 40
 time: null
 patience: 100
