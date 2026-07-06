@@ -216,3 +216,27 @@ git pull
   - `scripts/train.sh`: trains YOLO from `data/labels/dataset.yaml`.
 - Clarified the mental model for the user: the builder always rebuilds the dataset from captured frame folders, and `ml/train_yolo.py` always retrains from the pretrained base on the whole current dataset, so new captures are learned together with old captures.
 - Advised on data quantity: roughly 150-250 varied, in-domain images per object, prioritizing the bit, with variety (hands, several backgrounds, near/far, angles, lighting) mattering more than raw count.
+
+## July 5, 2026
+
+### Physical Rover Design
+
+- Created SolidWorks parts for mounting the electronics and camera on the rover.
+- Designed a Raspberry Pi holder so the Pi has a planned physical location instead of being loose on the rover body.
+- Designed a camera-position holder so the vision system can be mounted at a more controlled angle and height.
+- Added the current rover CAD files to the project so the mechanical design can evolve alongside the electronics, code, and vision work.
+
+### Training And Validation GUI
+
+- Built a local workflow GUI to make the machine-learning loop easier to run and check.
+- The GUI gives one place to split captured videos into frames, process/auto-label the frames, train the YOLO detector, and review the generated examples.
+- Added a job log so long-running tasks like processing and training can be watched without guessing whether they are still running.
+- Added review controls so rejected or questionable examples can be separated from the training set instead of quietly hurting model quality.
+- Updated the training scripts to work smoothly with this GUI-driven workflow.
+
+### Dataset Review Progress
+
+- Continued cleaning the `bit` and `wrench` training data by moving questionable frames out of the train/val folders and into excluded review areas.
+- Removed bad bit examples from the dataset so the detector is trained on cleaner object views.
+- Cleaned up old review preview images after they had served their purpose, including the remaining `bit` review previews in the current working tree.
+- Re-ran YOLO training outputs after the dataset and workflow cleanup so the detector reflects the cleaner training process.
