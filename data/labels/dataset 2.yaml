@@ -1,0 +1,13 @@
+# This file tells YOLO where the pictures are and what the classes are.
+# 'path' is the full path to this dataset folder so YOLO always finds it.
+path: /Users/leonardoragogna/Desktop/AutonomousRover/data/labels
+train:
+  - bit/images/train
+  - wrench/images/train
+val:
+  - bit/images/val
+  - wrench/images/val
+nc: 2
+names:
+  0: bit
+  1: wrench

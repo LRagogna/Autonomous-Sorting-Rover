@@ -27,13 +27,13 @@ data/
   extract_video_frames.py        # turn videos into photos
   auto_label_frames.py           # turn photos into a YOLO dataset (draws the boxes)
   capture_webcam_training_images.py
+  raw/
+    clips/<object>/<clip>        # original recorded videos
+    photos/<object>/             # JPG frames created by split_frames.sh
   labels/
     object_classes.txt           # the master list of objects: "id name"
-  processed/
-    detection/                   # the YOLO dataset (created by auto_label_frames.py)
-  raw/
-    videos/<object>/<clip>       # original recorded clips
-    photos/<object>/<clip>/      # frames extracted from those clips
+    dataset.yaml                 # YOLO dataset config created by process.sh
+    <object>/                    # processed images, labels, and review images
 ml/
   train_yolo.py                  # train the detector
 models/
@@ -41,48 +41,69 @@ models/
 src/
   desktop_yolo_detector.py       # live webcam detector (draws the green boxes)
 scripts/
-  retrain.sh                     # one command: rebuild dataset + retrain
+  run_workflow_gui.sh            # browser GUI for the training workflow
+  split_frames.sh                # manual/debug command to split raw clips into JPG frames
+  process.sh                     # split new clips and add new frames to the YOLO dataset
+  train.sh                       # train YOLO from the processed dataset
   run_desktop_detector.sh
   setup_pi_sparse_checkout.sh
 tests/
   rectangle_detect.py            # Raspberry Pi green-color detection proof of concept
 ```
 
-## Retrain In One Command
+## Training Workflow
 
-Whenever you add more training data, rebuild the dataset and retrain with a
-single command:
+The normal training workflow is:
 
 ```bash
-./scripts/retrain.sh
+./scripts/process.sh
+./scripts/train.sh
 ```
 
-This does everything for you: it **slices any new videos** in `data/raw/videos`
-into photos (already-sliced videos are skipped), **rebuilds the dataset** from all
-your source folders (old and new together), and **trains** the detector into
-`models/yolo_detector.pt`. Pass training options straight through, for example
-`./scripts/retrain.sh --epochs 60 --scale 0.9`, force the CPU with
-`DEVICE=cpu ./scripts/retrain.sh`, or keep more frames per video with
-`FRAME_STEP=10 ./scripts/retrain.sh`.
+`process.sh` is the one-button data prep step. It first slices any new clips in
+`data/raw/clips/` into JPG frames under `data/raw/photos/<object>/`, then turns
+new frames into YOLO labels, processed train/check images, and per-object review
+folders under `data/labels/<object>/`.
 
-So if you record a new clip, you can just drop the video file into
-`data/raw/videos/<object>/` and run `./scripts/retrain.sh` — no separate extract
-step needed.
+After a clip has been added to the dataset, it is recorded in
+`data/raw/photos/.processed_clips.json`. Future runs skip tracked clips, so old
+videos are not split or added again. If you delete a bad review frame, that raw
+frame is also recorded in `data/raw/photos/.deleted_frames.json` so it does not
+come back later.
+
+`train.sh` trains the detector from `data/labels/dataset.yaml` and writes the
+final model to `models/yolo_detector.pt`. Pass training options straight
+through, for example `./scripts/train.sh --epochs 60 --scale 0.9`, or force the
+CPU with `DEVICE=cpu ./scripts/train.sh`.
+
+To keep more frames per video when splitting:
+
+```bash
+FRAME_STEP=10 ./scripts/process.sh
+```
+
+You can also manage the same workflow from a local browser GUI:
+
+```bash
+./scripts/run_workflow_gui.sh
+```
+
+The GUI lets you drag and drop multiple videos into `data/raw/clips/<object>/`,
+run Process Data and Train Data from buttons, and review/delete generated
+frames. When you delete a review frame, the matching raw frame and YOLO
+label/image are also removed, and the deletion is recorded so that frame does
+not come back on the next processing run.
 
 ## The Vision Pipeline In Steps
 
-The one command above is just these steps in a row. The detector learns from your
-own photos:
+The detector learns from your own photos through this short workflow:
 
 ```bash
-# 1. Turn your videos into photos (skip if you already have photos)
-python data/extract_video_frames.py --all --frame-step 15
+# 1. Split new clips, draw boxes, and add them to the YOLO dataset
+./scripts/process.sh
 
-# 2. Draw a box around the object in every photo and build the YOLO dataset
-python data/auto_label_frames.py --overwrite
-
-# 3. Train the detector
-python ml/train_yolo.py
+# 2. Train the detector
+./scripts/train.sh
 ```
 
 Then run the live detector on your computer:
@@ -151,22 +172,29 @@ It also tells Git LFS not to fetch `data/`, `docs/`, `solidworks/`, `ml/`,
 `models/`, the computer `requirements.txt`, or the base YOLO weights during
 normal Pi pulls.
 
-## Step 1: Extract Training Photos From Video
+## Step 1: Process Training Clips Into Reviewable Data
 
-Place source videos in object-specific folders under `data/raw/videos/`:
+Place source videos in object-specific folders under `data/raw/clips/`:
 
 ```text
-data/raw/videos/wrench/clip_01.MOV
-data/raw/videos/bit/clip_01.MOV
+data/raw/clips/wrench/clip_01.MOV
+data/raw/clips/bit/clip_01.MOV
 ```
 
-Then extract frames from every video at once:
+Then process the data:
 
 ```bash
-python data/extract_video_frames.py --all --frame-step 15
+./scripts/process.sh
 ```
 
-At roughly 30 FPS, `--frame-step 15` saves about 2 frames per second. Photos are written to `data/raw/photos/<object>/<clip>/`. Batch mode skips videos that already have photos, so you can add new clips over time and rerun it.
+This first splits new clips into JPG frames, then creates YOLO labels and review
+images. At roughly 30 FPS, the default `FRAME_STEP=15` saves about 2 frames per
+second. Photos are written as JPG frames to `data/raw/photos/<object>/`, with
+filenames like `clip_01__frame_000000.jpg`.
+
+After a clip has been added to `data/labels`, it is tracked in
+`data/raw/photos/.processed_clips.json`, so future Process Data runs skip that
+clip instead of splitting or adding it again.
 
 You can also capture photos straight from your webcam:
 
@@ -174,30 +202,36 @@ You can also capture photos straight from your webcam:
 python data/capture_webcam_training_images.py wrench --auto-save --max-images 80
 ```
 
-## Step 2: Auto-Label The Photos (Build The YOLO Dataset)
+## Step 2: Review Generated Labels
 
 A YOLO detector needs to know **where** the object is in each photo, not just what it is. Because the objects sit on a plain, high-contrast mat, `data/auto_label_frames.py` can find the object and draw the box for you:
-
-```bash
-python data/auto_label_frames.py --overwrite
-```
 
 This reads the class list in `data/labels/object_classes.txt` and writes a ready-to-train dataset to:
 
 ```text
-data/processed/detection/
-  dataset.yaml            # class names + folders, for YOLO
-  images/train/           # most photos, used for learning
-  images/val/             # a few photos, used for checking
-  labels/train/           # one box file per training photo
-  labels/val/             # one box file per check photo
-  review/                 # the same photos with the box drawn on, for a human to check
+data/labels/
+  object_classes.txt
+  dataset.yaml
+  wrench/
+    images/train/
+    images/val/
+    labels/train/
+    labels/val/
+    review/
+  bit/
+    images/train/
+    images/val/
+    labels/train/
+    labels/val/
+    review/
 ```
 
-**Always spot-check `data/processed/detection/review/`.** Open a handful of images and confirm the green boxes hug the object. If a class looks wrong, delete those photos or adjust the padding and re-run:
+**Always spot-check each object's `review/` folder.** Open a handful of images
+and confirm the green boxes hug the object. If a class looks wrong, delete those
+source photos or adjust the padding and re-run:
 
 ```bash
-python data/auto_label_frames.py --overwrite --pad 0.1
+./scripts/process.sh --pad 0.1
 ```
 
 The dataset is split by video clip, so near-identical frames from one clip never end up in both the training and check sets.
@@ -205,7 +239,7 @@ The dataset is split by video clip, so near-identical frames from one clip never
 ## Step 3: Train The Detector
 
 ```bash
-python ml/train_yolo.py
+./scripts/train.sh
 ```
 
 This fine-tunes a small pretrained model (`yolov8n.pt`, "nano" = smallest/fastest). On a normal laptop CPU with a small dataset it finishes in a few minutes. The first run downloads the ~6 MB starter model, so you need internet once.
@@ -219,9 +253,9 @@ models/yolo_detector.pt
 Useful options:
 
 ```bash
-python ml/train_yolo.py --epochs 60     # train longer for tighter boxes
-python ml/train_yolo.py --imgsz 512     # smaller pictures = faster, rougher
-python ml/train_yolo.py --batch 4       # lower if you run out of memory
+./scripts/train.sh --epochs 60     # train longer for tighter boxes
+./scripts/train.sh --imgsz 512     # smaller pictures = faster, rougher
+./scripts/train.sh --batch 4       # lower if you run out of memory
 ```
 
 ## Step 4: Run The Live Detector On Your Computer
@@ -252,59 +286,22 @@ On macOS, if OpenCV says camera access was denied, allow your terminal app under
 System Settings > Privacy & Security > Camera
 ```
 
-## Make It Work On Hands And Different Backgrounds
+## Improve The Model With Your Own Captures
 
-The automatic labeler only works when the object sits alone on a plain
-background, so the trained model is best at that. If the detector struggles when
-you **hold the object in your hand** or use a **busy or colored background**, the
-fix is to add training pictures of those exact situations and box them by hand.
+Only use videos you capture yourself for this project. If the detector struggles
+with distance, lighting, angles, hands, or backgrounds, record more short clips
+that show those exact conditions and place them in:
 
-Full step-by-step instructions are in `data/hand_labeled/README.md`. In short:
-
-1. Capture varied webcam pictures (hand-held, different backgrounds, lighting):
-
-   ```bash
-   python data/capture_webcam_training_images.py wrench --output-dir data/hand_labeled --auto-save --max-images 120
-   python data/capture_webcam_training_images.py bit    --output-dir data/hand_labeled --auto-save --max-images 120
-   ```
-
-2. Draw boxes on them with LabelImg (a free desktop app), saving in **YOLO**
-   format:
-
-   ```bash
-   pip install labelImg
-   labelImg
-   ```
-
-3. Rebuild and retrain. The builder automatically folds in every hand-labeled
-   picture alongside the plain-background ones:
-
-   ```bash
-   python data/auto_label_frames.py --overwrite
-   python ml/train_yolo.py
-   ```
-
-Repeat the loop (capture more variety, label, retrain) until it recognizes the
-objects in the conditions you care about.
-
-## Add Internet Wrench Pictures (Better At A Distance)
-
-Our own photos are all close-up, so the detector can be weak on a wrench that is
-far away (small in the frame). Google's free **Open Images** dataset has thousands
-of real wrench pictures at many distances and backgrounds, each already boxed.
-Download a batch (wrench only — the bit is too unusual to find online):
-
-```bash
-pip install fiftyone
-python data/fetch_wrench_internet.py --max-samples 600
+```text
+data/raw/clips/<object>/
 ```
 
-This saves boxed wrench pictures into `data/hand_labeled/wrench_openimages/`, so
-they fold into the dataset automatically. Then rebuild and retrain:
+Then rebuild the training data and train again:
 
 ```bash
-python data/auto_label_frames.py --overwrite
-python ml/train_yolo.py
+./scripts/split_frames.sh
+./scripts/process.sh
+./scripts/train.sh
 ```
 
 Training also randomly zooms pictures in and out (the `--scale` option, default
@@ -312,15 +309,15 @@ Training also randomly zooms pictures in and out (the `--scale` option, default
 harder:
 
 ```bash
-python ml/train_yolo.py --scale 0.9
+./scripts/train.sh --scale 0.9
 ```
 
 ## How To Add A New Object To Recognize
 
 The pipeline is built to grow. To teach the rover a new object (for example, a washer):
 
-1. Record short videos into `data/raw/videos/washer/`.
-2. Extract photos: `python data/extract_video_frames.py --all --frame-step 15`
+1. Record short videos into `data/raw/clips/washer/`.
+2. Split photos: `./scripts/split_frames.sh`
 3. Add one line to `data/labels/object_classes.txt`, for example:
 
    ```text
@@ -329,8 +326,8 @@ The pipeline is built to grow. To teach the rover a new object (for example, a w
    2 washer
    ```
 
-4. Rebuild the dataset: `python data/auto_label_frames.py --overwrite`
-5. Retrain: `python ml/train_yolo.py`
+4. Process the photos and labels: `./scripts/process.sh`
+5. Train: `./scripts/train.sh`
 
 The new object will now get its own green box in the live detector.
 

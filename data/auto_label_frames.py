@@ -2,13 +2,14 @@
 
 HOW TO USE THIS FILE
 
-1. Make sure you already extracted photos from your videos:
+1. The normal workflow is to run:
 
-       python data/extract_video_frames.py --all --frame-step 15
+       ./scripts/process.sh
 
-   That fills these folders with pictures:
+   That command first extracts new photos from videos, then calls this file.
+   The extracted photos live here:
 
-       data/raw/photos/<object_type>/<video_file>/frame_000000.png
+       data/raw/photos/<object_type>/<clip_name>__frame_000000.jpg
 
 2. Make sure every object type has a line in the class list:
 
@@ -19,9 +20,9 @@ HOW TO USE THIS FILE
        0 bit
        1 wrench
 
-3. Build the YOLO training dataset:
+3. This file builds or updates the YOLO training dataset:
 
-       python data/auto_label_frames.py --overwrite
+       ./scripts/process.sh
 
    This looks at every photo, finds the metal object sitting on the mat,
    and writes a matching label file that says where the object is.
@@ -45,31 +46,33 @@ computer can guess the box on its own using OpenCV. For each photo this script:
 
 WHERE THE RESULTS GO
 
-    data/processed/detection/
-      dataset.yaml            <- tells YOLO the class names and folders
-      images/train/           <- most pictures, used for learning
-      images/val/             <- a few pictures, used for checking
-      labels/train/           <- one .txt box file per training picture
-      labels/val/             <- one .txt box file per check picture
-      review/                 <- the same pictures with the box drawn on top,
-                                 so a human can quickly confirm the boxes
+    data/labels/
+      object_classes.txt      <- master class list
+      dataset.yaml            <- tells YOLO where the object folders are
+      <object>/
+        images/train/         <- most pictures, used for learning
+        images/val/           <- a few pictures, used for checking
+        labels/train/         <- one .txt box file per training picture
+        labels/val/           <- one .txt box file per check picture
+        review/               <- boxed copies for this specific object
 
-TIP: open a handful of images in review/ after running. If the green boxes hug
-the object, you are ready to train. If a class looks wrong, delete those photos
-or re-run with a different --pad value.
+TIP: open the review folder for each object after running. If the green boxes
+hug the object, you are ready to train. If a class looks wrong, delete those
+photos or re-run with a different --pad value.
 
 HOW TO ADD A NEW OBJECT LATER
 
-1. Record short videos into data/raw/videos/<new_object>/
-2. python data/extract_video_frames.py --all --frame-step 15
-3. Add a new line to data/labels/object_classes.txt, e.g. "2 washer"
-4. python data/auto_label_frames.py --overwrite
-5. python ml/train_yolo.py
+1. Record short videos into data/raw/clips/<new_object>/
+2. Add a new line to data/labels/object_classes.txt, e.g. "2 washer"
+3. ./scripts/process.sh
+4. Review data/labels/<new_object>/review/
+5. ./scripts/train.sh
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -85,18 +88,22 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # Where the extracted photos already live (input).
 PHOTO_DIR = PROJECT_ROOT / "data" / "raw" / "photos"
 
+# Where the original captured videos live (input). We use this only to map a
+# frame prefix like IMG_1297 back to the source video name for the tracker.
+CLIPS_DIR = PROJECT_ROOT / "data" / "raw" / "clips"
+
+# Raw frames rejected in the review UI are recorded here so they do not come
+# back the next time the dataset is rebuilt.
+DELETED_FRAMES_FILE = PHOTO_DIR / ".deleted_frames.json"
+
+# Clips are added here after their frames have been written into data/labels.
+PROCESSED_CLIPS_FILE = PHOTO_DIR / ".processed_clips.json"
+
 # The plain-text class list, one "id name" per line (input).
 CLASS_LIST_FILE = PROJECT_ROOT / "data" / "labels" / "object_classes.txt"
 
-# Optional hand-labeled pictures (input). These are pictures you boxed yourself
-# with a tool like LabelImg, for hard scenes the auto-labeler cannot handle
-# (object held in your hand, busy or colored backgrounds). Any image here that
-# has a matching YOLO .txt file next to it is folded into the dataset. See
-# data/hand_labeled/README.md.
-HAND_LABELED_DIR = PROJECT_ROOT / "data" / "hand_labeled"
-
 # Where the finished YOLO dataset is written (output).
-DATASET_DIR = PROJECT_ROOT / "data" / "processed" / "detection"
+DATASET_DIR = PROJECT_ROOT / "data" / "labels"
 
 # File endings that count as pictures.
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
@@ -114,10 +121,15 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg"}
 # re-run. To exclude a new bad clip, add its folder name (the same name shown in
 # data/raw/photos/<object>/).
 IGNORE_CLIPS = {
+    "IMG_1929",
     "IMG_1929.MOV",
+    "IMG_1930",
     "IMG_1930.MOV",
+    "IMG_1931",
     "IMG_1931.MOV",
+    "IMG_1932",
     "IMG_1932.MOV",
+    "IMG_1933",
     "IMG_1933.MOV",
     "webcam_20260703_215357",
     "webcam_20260704_112722",
@@ -147,6 +159,103 @@ def load_classes() -> dict[str, int]:
         class_name = parts[1]
         name_to_id[class_name] = class_id
     return name_to_id
+
+
+def relative_to_project(path: Path) -> str:
+    """Return a stable repo-relative path for workflow manifests."""
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def read_json_file(path: Path, default):
+    """Read a small JSON workflow file, returning default if it is missing."""
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return default
+
+
+def write_json_file(path: Path, data) -> None:
+    """Write a small JSON workflow file in a readable, deterministic format."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def load_deleted_frames() -> set[str]:
+    """Read raw frames the user rejected in the review GUI."""
+    data = read_json_file(DELETED_FRAMES_FILE, {"deleted_frames": []})
+    if isinstance(data, dict):
+        entries = data.get("deleted_frames", [])
+    elif isinstance(data, list):
+        entries = data
+    else:
+        entries = []
+    return {str(entry) for entry in entries}
+
+
+def load_processed_clips() -> dict[str, dict]:
+    """Load clips already added to the YOLO dataset."""
+    data = read_json_file(PROCESSED_CLIPS_FILE, {"clips": {}})
+    if isinstance(data, dict) and isinstance(data.get("clips"), dict):
+        return data["clips"]
+    return {}
+
+
+def save_processed_clips(clips: dict[str, dict]) -> None:
+    """Save clips already added to the YOLO dataset."""
+    write_json_file(PROCESSED_CLIPS_FILE, {"clips": clips})
+
+
+def clip_stem_for_video(video_path: Path) -> str:
+    """Match the frame prefix created by extract_video_frames.py."""
+    return video_path.stem.strip().replace(" ", "_").replace(".", "_")
+
+
+def source_video_for_clip(object_type: str, clip_name: str) -> Path | None:
+    """Find the original video file for a processed clip name."""
+    object_dir = CLIPS_DIR / object_type
+    if not object_dir.exists():
+        return None
+    for video_path in sorted(p for p in object_dir.iterdir() if p.is_file()):
+        if clip_stem_for_video(video_path) == clip_name:
+            return video_path
+    return None
+
+
+def clip_manifest_key(object_type: str, clip_name: str) -> str:
+    """Return the processed tracker key for one clip."""
+    video_path = source_video_for_clip(object_type, clip_name)
+    if video_path is not None:
+        return f"{object_type}/{video_path.name}"
+    return f"{object_type}/{clip_name}"
+
+
+def mark_clip_processed(
+    clips: dict[str, dict],
+    object_type: str,
+    clip_name: str,
+    seen_frames: int,
+    written_frames: int,
+    skipped_frames: int,
+) -> None:
+    """Record that a clip has been incorporated into data/labels."""
+    video_path = source_video_for_clip(object_type, clip_name)
+    key = clip_manifest_key(object_type, clip_name)
+    clips[key] = {
+        "clip_stem": clip_name,
+        "object": object_type,
+        "path": relative_to_project(video_path) if video_path else "",
+        "processed_frames": written_frames,
+        "seen_frames": seen_frames,
+        "skipped_frames": skipped_frames,
+        "status": "dataset",
+        "video": video_path.name if video_path else clip_name,
+    }
+    save_processed_clips(clips)
 
 
 # We shrink every photo to this width before looking for the object, then scale
@@ -300,6 +409,15 @@ def box_to_yolo(box: tuple[int, int, int, int], width: int, height: int) -> str:
     return f"{cx:.6f} {cy:.6f} {nw:.6f} {nh:.6f}"
 
 
+def clip_name_for_frame(frame_path: Path, object_dir: Path) -> str:
+    """Return the source clip name for either new flat or legacy nested photos."""
+    if frame_path.parent == object_dir:
+        if "__frame_" in frame_path.stem:
+            return frame_path.stem.split("__frame_", 1)[0]
+        return "manual"
+    return frame_path.parent.name
+
+
 def collect_clip_frames() -> dict[tuple[str, str], list[Path]]:
     """Group every photo by (object_type, source video folder).
 
@@ -308,7 +426,23 @@ def collect_clip_frames() -> dict[tuple[str, str], list[Path]]:
     the check set from being an easy copy of the training set.
     """
     clips: dict[tuple[str, str], list[Path]] = {}
+    deleted_frames = load_deleted_frames()
     for object_dir in sorted(p for p in PHOTO_DIR.iterdir() if p.is_dir()):
+        direct_frames = sorted(
+            p
+            for p in object_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+        )
+        for frame_path in direct_frames:
+            if relative_to_project(frame_path) in deleted_frames:
+                continue
+            clip_name = clip_name_for_frame(frame_path, object_dir)
+            if clip_name in IGNORE_CLIPS:
+                continue
+            clips.setdefault((object_dir.name, clip_name), []).append(frame_path)
+
+        # Legacy support: older split runs wrote frames into
+        # data/raw/photos/<object>/<clip_name>/.
         for clip_dir in sorted(p for p in object_dir.iterdir() if p.is_dir()):
             if clip_dir.name in IGNORE_CLIPS:
                 continue
@@ -316,18 +450,46 @@ def collect_clip_frames() -> dict[tuple[str, str], list[Path]]:
                 p
                 for p in clip_dir.iterdir()
                 if p.suffix.lower() in IMAGE_EXTENSIONS
+                and relative_to_project(p) not in deleted_frames
             )
             if frames:
-                clips[(object_dir.name, clip_dir.name)] = frames
+                clips.setdefault((object_dir.name, clip_dir.name), []).extend(frames)
     return clips
 
 
-def reset_output_dirs() -> None:
-    """Delete any previous dataset and recreate the empty folder structure."""
-    if DATASET_DIR.exists():
-        shutil.rmtree(DATASET_DIR)
-    for sub in ("images/train", "images/val", "labels/train", "labels/val", "review"):
-        (DATASET_DIR / sub).mkdir(parents=True, exist_ok=True)
+def object_output_dir(object_type: str) -> Path:
+    """Return the generated label/review folder for one object type."""
+    return DATASET_DIR / object_type
+
+
+def output_stem_for_frame(object_type: str, clip_name: str, frame_path: Path) -> str:
+    """Return a unique processed filename stem for a raw frame."""
+    if frame_path.parent == PHOTO_DIR / object_type:
+        stem = f"{object_type}__{frame_path.stem}"
+    else:
+        stem = f"{object_type}__{clip_name}__{frame_path.stem}"
+    return stem.replace(".", "_")
+
+
+def ensure_object_output_dirs(class_names: list[str]) -> None:
+    """Create the per-object YOLO image, label, and review folders."""
+    for name in class_names:
+        root = object_output_dir(name)
+        for sub in ("images/train", "images/val", "labels/train", "labels/val", "review"):
+            (root / sub).mkdir(parents=True, exist_ok=True)
+
+
+def reset_output_dirs(class_names: list[str]) -> None:
+    """Delete generated label outputs while keeping the class list in place."""
+    DATASET_DIR.mkdir(parents=True, exist_ok=True)
+    for path in DATASET_DIR.iterdir():
+        if path.name in {"object_classes.txt", ".gitkeep"}:
+            continue
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    ensure_object_output_dirs(class_names)
 
 
 def write_dataset_yaml(class_names_in_order: list[str]) -> None:
@@ -335,12 +497,20 @@ def write_dataset_yaml(class_names_in_order: list[str]) -> None:
     names_block = "\n".join(
         f"  {index}: {name}" for index, name in enumerate(class_names_in_order)
     )
+    train_block = "\n".join(
+        f"  - {name}/images/train" for name in class_names_in_order
+    )
+    val_block = "\n".join(
+        f"  - {name}/images/val" for name in class_names_in_order
+    )
     text = (
         "# This file tells YOLO where the pictures are and what the classes are.\n"
-        "# 'path' is the full path to this dataset folder so YOLO always finds it.\n"
-        f"path: {DATASET_DIR}\n"
-        "train: images/train\n"
-        "val: images/val\n"
+        "# 'path' is relative to this YAML file, so it works after moving the repo.\n"
+        "path: .\n"
+        "train:\n"
+        f"{train_block}\n"
+        "val:\n"
+        f"{val_block}\n"
         f"nc: {len(class_names_in_order)}\n"
         "names:\n"
         f"{names_block}\n"
@@ -360,87 +530,6 @@ def save_review_image(
         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2, cv2.LINE_AA,
     )
     cv2.imwrite(str(out_path), preview)
-
-
-def _read_classes_txt(folder: Path) -> dict[int, str] | None:
-    """Read a LabelImg classes.txt (one name per line) into {local_id: name}."""
-    classes_file = folder / "classes.txt"
-    if not classes_file.exists():
-        return None
-    local: dict[int, str] = {}
-    for index, line in enumerate(classes_file.read_text().splitlines()):
-        name = line.strip()
-        if name:
-            local[index] = name
-    return local
-
-
-def ingest_hand_labeled(name_to_id: dict[str, int], val_fraction: float) -> dict[str, int]:
-    """Fold hand-labeled pictures (image + YOLO .txt) into the dataset.
-
-    LabelImg saves the class numbers in the order shown in its class list. To be
-    safe, if a picture's folder has a classes.txt we remap those local numbers to
-    our official numbers by NAME, so the ids always line up with
-    data/labels/object_classes.txt no matter what order LabelImg used.
-
-    Every Nth labeled picture (per --val-fraction) goes to the check set.
-    """
-    written = {"train": 0, "val": 0, "unlabeled": 0}
-    if not HAND_LABELED_DIR.exists():
-        return written
-
-    step = max(2, round(1 / val_fraction)) if val_fraction > 0 else 0
-    val_counter = 0
-
-    images = sorted(
-        p for p in HAND_LABELED_DIR.rglob("*")
-        if p.suffix.lower() in IMAGE_EXTENSIONS
-    )
-    for image_path in images:
-        label_path = image_path.with_suffix(".txt")
-        if not label_path.exists() or not label_path.read_text().strip():
-            # Picture is not labeled yet, so we cannot use it. Skip quietly.
-            written["unlabeled"] += 1
-            continue
-
-        local_classes = _read_classes_txt(image_path.parent)
-
-        # Rewrite each line so the class number matches our official numbering.
-        fixed_lines: list[str] = []
-        for line in label_path.read_text().splitlines():
-            parts = line.split()
-            if len(parts) != 5:
-                continue
-            local_id = int(parts[0])
-            if local_classes is not None and local_id in local_classes:
-                name = local_classes[local_id]
-                if name not in name_to_id:
-                    print(f"  hand-labeled: unknown class '{name}' in {label_path.name}, skipping line")
-                    continue
-                global_id = name_to_id[name]
-            else:
-                global_id = local_id  # assume already correct
-            fixed_lines.append(f"{global_id} {parts[1]} {parts[2]} {parts[3]} {parts[4]}")
-
-        if not fixed_lines:
-            continue
-
-        val_counter += 1
-        split = "val" if (step and val_counter % step == 0) else "train"
-
-        # Flatten the path into a unique name, tagged "hand__" so these are easy
-        # to tell apart from the auto-labeled mat pictures.
-        rel = image_path.relative_to(HAND_LABELED_DIR)
-        stem = "hand__" + "__".join(rel.with_suffix("").parts).replace(".", "_")
-
-        suffix = image_path.suffix.lower()
-        shutil.copyfile(image_path, DATASET_DIR / "images" / split / f"{stem}{suffix}")
-        (DATASET_DIR / "labels" / split / f"{stem}.txt").write_text(
-            "\n".join(fixed_lines) + "\n"
-        )
-        written[split] += 1
-
-    return written
 
 
 def parse_args() -> argparse.Namespace:
@@ -463,6 +552,10 @@ def parse_args() -> argparse.Namespace:
         "--overwrite", action="store_true",
         help="Delete and rebuild the dataset folder before writing.",
     )
+    parser.add_argument(
+        "--incremental", action="store_true",
+        help="Only process clips that are not already in the processed tracker.",
+    )
     return parser.parse_args()
 
 
@@ -478,15 +571,22 @@ def main() -> None:
     if not PHOTO_DIR.exists():
         sys.exit(
             f"No photos folder found at {PHOTO_DIR}\n"
-            "Run data/extract_video_frames.py first."
+            "Run ./scripts/split_frames.sh first."
         )
 
-    if DATASET_DIR.exists() and not args.overwrite:
+    if (DATASET_DIR / "dataset.yaml").exists() and not args.overwrite and not args.incremental:
         sys.exit(
-            f"{DATASET_DIR} already exists. Re-run with --overwrite to rebuild it."
+            f"{DATASET_DIR / 'dataset.yaml'} already exists. "
+            "Re-run with --overwrite to rebuild generated labels."
         )
 
-    reset_output_dirs()
+    if args.overwrite:
+        reset_output_dirs(class_names_in_order)
+        processed_clips: dict[str, dict] = {}
+    else:
+        DATASET_DIR.mkdir(parents=True, exist_ok=True)
+        ensure_object_output_dirs(class_names_in_order)
+        processed_clips = load_processed_clips()
 
     clips = collect_clip_frames()
     if not clips:
@@ -499,10 +599,15 @@ def main() -> None:
     val_counter: dict[str, int] = {}
     written = {"train": 0, "val": 0}
     skipped_no_box = 0
+    skipped_tracked = 0
+    clips_processed = 0
 
     for (object_type, clip_name), frames in clips.items():
         if object_type not in name_to_id:
             print(f"Skipping '{object_type}': no matching line in object_classes.txt")
+            continue
+        if args.incremental and clip_manifest_key(object_type, clip_name) in processed_clips:
+            skipped_tracked += 1
             continue
         class_id = name_to_id[object_type]
 
@@ -511,9 +616,13 @@ def main() -> None:
         step = max(2, round(1 / args.val_fraction)) if args.val_fraction > 0 else 0
         is_val = step and (val_counter[object_type] % step == 0)
         split = "val" if is_val else "train"
+        clip_seen = 0
+        clip_written = 0
+        clip_skipped = 0
 
         for frame_path in frames:
             per_object_seen[object_type] = per_object_seen.get(object_type, 0) + 1
+            clip_seen += 1
             if args.limit_per_object and (
                 per_object_used.get(object_type, 0) >= args.limit_per_object
             ):
@@ -525,15 +634,17 @@ def main() -> None:
             box = find_object_box(image, args.pad)
             if box is None:
                 skipped_no_box += 1
+                clip_skipped += 1
                 continue
 
             height, width = image.shape[:2]
             # A unique, flat name so pictures from different clips never collide.
-            stem = f"{object_type}__{clip_name}__{frame_path.stem}".replace(".", "_")
+            stem = output_stem_for_frame(object_type, clip_name, frame_path)
 
-            image_out = DATASET_DIR / "images" / split / f"{stem}.jpg"
-            label_out = DATASET_DIR / "labels" / split / f"{stem}.txt"
-            review_out = DATASET_DIR / "review" / f"{stem}.jpg"
+            object_dir = object_output_dir(object_type)
+            image_out = object_dir / "images" / split / f"{stem}.jpg"
+            label_out = object_dir / "labels" / split / f"{stem}.txt"
+            review_out = object_dir / "review" / f"{stem}.jpg"
 
             cv2.imwrite(str(image_out), image)
             label_out.write_text(f"{class_id} {box_to_yolo(box, width, height)}\n")
@@ -541,29 +652,39 @@ def main() -> None:
 
             per_object_used[object_type] = per_object_used.get(object_type, 0) + 1
             written[split] += 1
+            clip_written += 1
 
-    # Fold in any pictures you boxed yourself with LabelImg (hands, backgrounds).
-    hand = ingest_hand_labeled(name_to_id, args.val_fraction)
-    written["train"] += hand["train"]
-    written["val"] += hand["val"]
+        mark_clip_processed(
+            processed_clips,
+            object_type,
+            clip_name,
+            clip_seen,
+            clip_written,
+            clip_skipped,
+        )
+        clips_processed += 1
 
     write_dataset_yaml(class_names_in_order)
 
     print("\nDone building the YOLO dataset.")
     print(f"  classes:        {', '.join(class_names_in_order)}")
-    print(f"  training images: {written['train']}")
-    print(f"  check images:    {written['val']}")
-    if hand["train"] or hand["val"]:
-        print(f"  (of those, hand-labeled: {hand['train']} train, {hand['val']} check)")
-    if hand["unlabeled"]:
-        print(f"  hand_labeled pictures with no boxes yet (skipped): {hand['unlabeled']}")
+    prefix = "new " if args.incremental else ""
+    print(f"  {prefix}training images: {written['train']}")
+    print(f"  {prefix}check images:    {written['val']}")
+    print(f"  clips processed: {clips_processed}")
+    if skipped_tracked:
+        print(f"  clips skipped (already tracked): {skipped_tracked}")
+    if args.incremental and clips_processed == 0:
+        print("  no new clips needed processing")
     if skipped_no_box:
         print(f"  skipped (no object found): {skipped_no_box}")
     print(f"\nDataset folder: {DATASET_DIR}")
-    print(f"Spot-check the boxes here: {DATASET_DIR / 'review'}")
-    print("Next step:  python ml/train_yolo.py")
+    print("Spot-check the boxes in each object's review folder:")
+    for name in class_names_in_order:
+        print(f"  {object_output_dir(name) / 'review'}")
+    print("Next step:  ./scripts/train.sh")
 
-    if written["val"] == 0:
+    if clips_processed > 0 and written["val"] == 0:
         print(
             "\nWARNING: no check images were created. Add more video clips per "
             "object, or lower --val-fraction is not the issue here."

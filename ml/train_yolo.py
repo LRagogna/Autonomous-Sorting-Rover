@@ -4,11 +4,11 @@ HOW TO USE THIS FILE
 
 1. First build the dataset (this makes the boxes for every photo):
 
-       python data/auto_label_frames.py --overwrite
+       ./scripts/process.sh
 
 2. Then train the detector:
 
-       python ml/train_yolo.py
+       ./scripts/train.sh
 
    The first run downloads a tiny starter model called "yolov8n.pt" (~6 MB),
    so you need internet the first time.
@@ -36,9 +36,9 @@ That single file is what the live webcam detector loads:
 
 USEFUL OPTIONS
 
-    python ml/train_yolo.py --epochs 60      # train longer for better boxes
-    python ml/train_yolo.py --imgsz 512      # smaller pictures = faster, rougher
-    python ml/train_yolo.py --device cpu     # force CPU (this is the default)
+    ./scripts/train.sh --epochs 60      # train longer for better boxes
+    ./scripts/train.sh --imgsz 512      # smaller pictures = faster, rougher
+    DEVICE=cpu ./scripts/train.sh       # force CPU
 """
 
 from __future__ import annotations
@@ -52,8 +52,8 @@ from pathlib import Path
 # This file lives in ml/, so parents[1] is the project folder above ml/.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# The dataset that data/auto_label_frames.py created.
-DATASET_YAML = PROJECT_ROOT / "data" / "processed" / "detection" / "dataset.yaml"
+# The dataset that scripts/process.sh creates.
+DATASET_YAML = PROJECT_ROOT / "data" / "labels" / "dataset.yaml"
 
 # Where we save training runs, and the final easy-to-find weights file.
 RUNS_DIR = PROJECT_ROOT / "models" / "yolo_runs"
@@ -97,7 +97,7 @@ def main() -> None:
         sys.exit(
             f"Dataset not found: {DATASET_YAML}\n"
             "Build it first with:\n"
-            "    python data/auto_label_frames.py --overwrite"
+            "    ./scripts/process.sh"
         )
 
     # Import here so the friendly error messages above can show even if

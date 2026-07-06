@@ -4,11 +4,11 @@ HOW TO USE THIS FILE
 
 1. Put your videos in this folder shape:
 
-       data/raw/videos/<object_type>/<video_file>
+       data/raw/clips/<object_type>/<video_file>
 
    Example:
 
-       data/raw/videos/washer/pan_01.mp4
+       data/raw/clips/washer/pan_01.mp4
 
 2. Extract photos from one video:
 
@@ -16,15 +16,15 @@ HOW TO USE THIS FILE
 
    This creates:
 
-       data/raw/photos/washer/pan_01.mp4/frame_000000.png
-       data/raw/photos/washer/pan_01.mp4/frame_000015.png
-       data/raw/photos/washer/pan_01.mp4/frame_000030.png
+       data/raw/photos/washer/pan_01__frame_000000.jpg
+       data/raw/photos/washer/pan_01__frame_000015.jpg
+       data/raw/photos/washer/pan_01__frame_000030.jpg
 
 3. Extract photos from every video:
 
-       python data/extract_video_frames.py --all --frame-step 15
+       ./scripts/split_frames.sh
 
-   The --all option looks through every object folder in data/raw/videos.
+   The --all option looks through every object folder in data/raw/clips.
    If a video already has photos, the script skips it so it does not redo work.
 
 WHAT THIS FILE DOES
@@ -36,34 +36,41 @@ WHAT THIS FILE DOES
 
 EXPECTED INPUT LAYOUT
 
-    data/raw/videos/washer/pan_01.mp4
+    data/raw/clips/washer/pan_01.mp4
 
 EXPECTED OUTPUT LAYOUT
 
-    data/raw/photos/<object_type>/<video_file>/<generated_frame_images>
+    data/raw/photos/<object_type>/<clip_name>__frame_<frame_number>.jpg
 
 Example:
 
-    data/raw/photos/washer/pan_01.mp4/frame_000000.png
+    data/raw/photos/washer/pan_01__frame_000000.jpg
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 
-# This file lives in src/, so parents[1] means "the project folder above src".
+# This file lives in data/, so parents[1] means "the project folder above data".
 # Keeping paths based on PROJECT_ROOT lets the script work no matter where the
 # terminal is opened from, as long as Python runs this file.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# Raw videos are the original clips recorded by a person.
-DEFAULT_VIDEO_DIR = PROJECT_ROOT / "data" / "raw" / "videos"
+# Raw clips are the original videos recorded by a person.
+DEFAULT_VIDEO_DIR = PROJECT_ROOT / "data" / "raw" / "clips"
 
 # Raw photos are the image frames created from those videos.
 DEFAULT_PHOTO_DIR = PROJECT_ROOT / "data" / "raw" / "photos"
+
+# Local workflow state. These files make the GUI and CLI agree about clips that
+# were already added to the dataset and frames that were intentionally rejected
+# in review.
+PROCESSED_CLIPS_FILE = DEFAULT_PHOTO_DIR / ".processed_clips.json"
+DELETED_FRAMES_FILE = DEFAULT_PHOTO_DIR / ".deleted_frames.json"
 
 # When batch mode checks whether a video was already processed, these are the
 # file endings that count as "photos already exist".
@@ -82,14 +89,14 @@ def parse_args() -> argparse.Namespace:
     """
     parser = argparse.ArgumentParser(
         description=(
-            "Extract frames from data/raw/videos/<object_type>/<video> into "
-            "data/raw/photos/<object_type>/<video>/ for ML processing."
+            "Extract frames from data/raw/clips/<object_type>/<video> into "
+            "data/raw/photos/<object_type>/ as JPGs for ML processing."
         )
     )
     parser.add_argument(
         "object_type",
         nargs="?",
-        help="Object folder under data/raw/videos/, such as washer.",
+        help="Object folder under data/raw/clips/, such as washer.",
     )
     parser.add_argument(
         "video_name",
@@ -99,7 +106,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Process every video under data/raw/videos/ and skip videos with existing photos.",
+        help="Process every video under data/raw/clips/ and skip videos with existing photos.",
     )
     parser.add_argument(
         "--frame-step",
@@ -122,8 +129,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--image-format",
         choices=("png", "jpg", "jpeg"),
-        default="png",
-        help="Output image format. Defaults to png.",
+        default="jpg",
+        help="Output image format. Defaults to jpg.",
     )
     return parser.parse_args()
 
@@ -132,7 +139,7 @@ def resolve_video_path(object_type: str, video_name: str) -> Path:
     """Build the video path from the object folder and video filename.
 
     Common use:
-        washer pan_01.mp4 -> data/raw/videos/washer/pan_01.mp4
+        washer pan_01.mp4 -> data/raw/clips/washer/pan_01.mp4
     """
     # Validate the object folder before using it in a filesystem path. This
     # prevents accidental paths like "../somewhere_else".
@@ -146,7 +153,7 @@ def resolve_video_path(object_type: str, video_name: str) -> Path:
         raise ValueError("video_name must be a filename inside the object folder.")
 
     # Final path example:
-    # data/raw/videos/washer/pan_01.mp4
+    # data/raw/clips/washer/pan_01.mp4
     return (DEFAULT_VIDEO_DIR / object_type / video_path).resolve()
 
 
@@ -154,7 +161,7 @@ def validate_object_type(object_type: str) -> str:
     """Keep object labels safe to use as folder names.
 
     This project uses folder names as labels. For example, every video inside
-    data/raw/videos/washer is treated as a washer video.
+    data/raw/clips/washer is treated as a washer video.
     """
     output_path = Path(object_type)
 
@@ -169,6 +176,62 @@ def validate_object_type(object_type: str) -> str:
     return object_type.strip().replace(" ", "_")
 
 
+def relative_to_project(path: Path) -> str:
+    """Return a stable repo-relative path for workflow manifests."""
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def read_json_file(path: Path, default):
+    """Read a small JSON workflow file, returning default if it is missing."""
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return default
+
+
+def write_json_file(path: Path, data) -> None:
+    """Write a small JSON workflow file in a readable, deterministic format."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+
+
+def clip_manifest_key(object_type: str, video_path: Path) -> str:
+    """Return the manifest key that identifies one source clip."""
+    return f"{validate_object_type(object_type)}/{video_path.name}"
+
+
+def load_processed_clips() -> dict[str, dict]:
+    """Load the clips already handled by split_frames.sh or the GUI."""
+    data = read_json_file(PROCESSED_CLIPS_FILE, {"clips": {}})
+    if isinstance(data, dict) and isinstance(data.get("clips"), dict):
+        return data["clips"]
+    return {}
+
+
+def load_deleted_frames() -> set[str]:
+    """Load raw frames the user rejected in the review UI."""
+    data = read_json_file(DELETED_FRAMES_FILE, {"deleted_frames": []})
+    if isinstance(data, dict):
+        entries = data.get("deleted_frames", [])
+    elif isinstance(data, list):
+        entries = data
+    else:
+        entries = []
+    return {str(entry) for entry in entries}
+
+
+def is_deleted_frame(image_path: Path, deleted_frames: set[str] | None) -> bool:
+    """Return True if this frame was previously rejected during review."""
+    if not deleted_frames:
+        return False
+    return relative_to_project(image_path) in deleted_frames
+
+
 def extract_frames(
     video_path: Path,
     object_type: str,
@@ -176,6 +239,7 @@ def extract_frames(
     start_frame: int,
     max_frames: int | None,
     image_format: str,
+    deleted_frames: set[str] | None = None,
 ) -> int:
     """Read one video with OpenCV and save selected frames as image files.
 
@@ -211,12 +275,12 @@ def extract_frames(
 
     object_type = validate_object_type(object_type)
 
-    # Every video gets its own photo folder. This keeps different pans, angles,
-    # and lighting conditions separated:
+    # Every frame keeps the clip name in its filename. This gives each object a
+    # single photo folder while preserving which video each frame came from:
     #
-    # data/raw/photos/washer/pan_01.mp4/
-    # data/raw/photos/washer/pan_02.mp4/
-    output_dir = DEFAULT_PHOTO_DIR / object_type / video_path.name
+    # data/raw/photos/washer/pan_01__frame_000000.jpg
+    # data/raw/photos/washer/pan_02__frame_000000.jpg
+    output_dir = DEFAULT_PHOTO_DIR / object_type
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # VideoCapture reads the video sequentially, one frame at a time.
@@ -245,8 +309,15 @@ def extract_frames(
             if should_save:
                 # The frame number goes in the filename so it is easy to trace
                 # an image back to its position in the video.
-                image_name = f"frame_{frame_index:06d}.{extension}"
+                image_name = (
+                    f"{clip_stem_for_video(video_path)}"
+                    f"__frame_{frame_index:06d}.{extension}"
+                )
                 image_path = output_dir / image_name
+
+                if is_deleted_frame(image_path, deleted_frames):
+                    frame_index += 1
+                    continue
 
                 if not cv2.imwrite(str(image_path), frame):
                     raise RuntimeError(f"Could not write image: {image_path}")
@@ -264,39 +335,64 @@ def extract_frames(
     return saved_count
 
 
+def clip_stem_for_video(video_path: Path) -> str:
+    """Return the safe clip prefix used in extracted frame filenames."""
+    return video_path.stem.strip().replace(" ", "_").replace(".", "_")
+
+
 def output_dir_for_video(video_path: Path, object_type: str) -> Path:
-    """Return the folder where this video's extracted frames should live.
+    """Return the object folder where this video's extracted frames should live.
 
     Example:
-        video_path = data/raw/videos/washer/pan_01.mp4
+        video_path = data/raw/clips/washer/pan_01.mp4
         object_type = washer
-        returns data/raw/photos/washer/pan_01.mp4
+        returns data/raw/photos/washer
     """
-    return DEFAULT_PHOTO_DIR / validate_object_type(object_type) / video_path.name
+    return DEFAULT_PHOTO_DIR / validate_object_type(object_type)
 
 
-def has_existing_photos(output_dir: Path) -> bool:
+def has_existing_photos(
+    output_dir: Path,
+    video_path: Path,
+    object_type: str | None = None,
+    processed_clips: dict[str, dict] | None = None,
+) -> bool:
     """Check whether a video already has extracted image files.
 
     Batch mode uses this to avoid doing the same work twice. If the output
-    folder already contains a .png, .jpg, or .jpeg file, the script assumes that
-    video has already been processed.
+    folder already contains frames with this clip's prefix, the script assumes
+    that video has already been processed. It also recognizes the older nested
+    output layout so existing extracted clips are not duplicated.
     """
+    if object_type is not None and processed_clips is not None:
+        if clip_manifest_key(object_type, video_path) in processed_clips:
+            return True
+
     if not output_dir.exists():
         return False
 
+    clip_prefix = f"{clip_stem_for_video(video_path)}__frame_"
+    legacy_output_dir = output_dir / video_path.name
+
+    if legacy_output_dir.exists() and any(
+        path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        for path in legacy_output_dir.iterdir()
+    ):
+        return True
+
     return any(
         path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        and path.name.startswith(clip_prefix)
         for path in output_dir.iterdir()
     )
 
 
 def iter_dataset_videos() -> list[tuple[str, Path]]:
-    """Find videos stored as data/raw/videos/<object_type>/<video_name>.
+    """Find videos stored as data/raw/clips/<object_type>/<video_name>.
 
     Returns a list like:
 
-        [("washer", Path("data/raw/videos/washer/pan_01.mp4"))]
+        [("washer", Path("data/raw/clips/washer/pan_01.mp4"))]
 
     The object type is included with each path so batch mode knows which output
     folder to use.
@@ -306,7 +402,7 @@ def iter_dataset_videos() -> list[tuple[str, Path]]:
 
     videos: list[tuple[str, Path]] = []
 
-    # First loop: each folder directly inside data/raw/videos is an object type.
+    # First loop: each folder directly inside data/raw/clips is an object type.
     for object_dir in sorted(DEFAULT_VIDEO_DIR.iterdir()):
         # Skip files and hidden folders like .DS_Store.
         if not object_dir.is_dir() or object_dir.name.startswith("."):
@@ -336,6 +432,8 @@ def extract_all_frames(args: argparse.Namespace) -> tuple[int, int, int]:
     processed_count = 0
     skipped_count = 0
     saved_total = 0
+    processed_clips = load_processed_clips()
+    deleted_frames = load_deleted_frames()
 
     for object_type, video_path in iter_dataset_videos():
         output_dir = output_dir_for_video(video_path, object_type)
@@ -343,7 +441,7 @@ def extract_all_frames(args: argparse.Namespace) -> tuple[int, int, int]:
         # If there are already photos for this video, leave them alone. This is
         # useful when adding new videos over time: --all only works on the new
         # ones.
-        if has_existing_photos(output_dir):
+        if has_existing_photos(output_dir, video_path, object_type, processed_clips):
             print(f"Skipping {video_path}: photos already exist in {output_dir}")
             skipped_count += 1
             continue
@@ -355,6 +453,7 @@ def extract_all_frames(args: argparse.Namespace) -> tuple[int, int, int]:
             start_frame=args.start_frame,
             max_frames=args.max_frames,
             image_format=args.image_format,
+            deleted_frames=deleted_frames,
         )
         print(f"Saved {saved_count} image(s) to {output_dir}")
         processed_count += 1
@@ -372,7 +471,7 @@ def main() -> int:
     args = parse_args()
 
     try:
-        # Batch mode: process everything under data/raw/videos.
+        # Batch mode: process everything under data/raw/clips.
         if args.all:
             processed_count, skipped_count, saved_total = extract_all_frames(args)
             print(
@@ -397,6 +496,7 @@ def main() -> int:
             start_frame=args.start_frame,
             max_frames=args.max_frames,
             image_format=args.image_format,
+            deleted_frames=load_deleted_frames(),
         )
     except (FileNotFoundError, RuntimeError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)

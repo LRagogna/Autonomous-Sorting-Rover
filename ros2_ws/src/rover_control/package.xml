@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rover_control</name>
+  <version>0.1.0</version>
+  <description>
+    Modular teleop control for the autonomous rover. A keyboard node publishes
+    geometry_msgs/Twist on /cmd_vel; a fake motor node subscribes and converts
+    the command into simulated left/right motor values. The fake motor node can
+    later be swapped for an Arduino serial bridge with no changes to the rest of
+    the system, since /cmd_vel is the only integration point.
+  </description>
+  <maintainer email="alexiragogna@gmail.com">Leonardo Ragogna</maintainer>
+  <license>MIT</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

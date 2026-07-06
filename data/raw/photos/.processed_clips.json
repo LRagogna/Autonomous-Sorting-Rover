@@ -1,0 +1,121 @@
+{
+  "clips": {
+    "bit/IMG_1297.MOV": {
+      "clip_stem": "IMG_1297",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1297.MOV",
+      "processed_frames": 66,
+      "seen_frames": 69,
+      "skipped_frames": 3,
+      "status": "dataset",
+      "video": "IMG_1297.MOV"
+    },
+    "bit/IMG_1298.MOV": {
+      "clip_stem": "IMG_1298",
+      "frame_step": null,
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1298.MOV",
+      "saved_images": 71,
+      "status": "dataset",
+      "video": "IMG_1298.MOV"
+    },
+    "bit/IMG_1299.MOV": {
+      "clip_stem": "IMG_1299",
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1299.MOV",
+      "processed_frames": 61,
+      "seen_frames": 61,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1299.MOV"
+    },
+    "bit/IMG_1300.MOV": {
+      "clip_stem": "IMG_1300",
+      "frame_step": null,
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1300.MOV",
+      "saved_images": 66,
+      "status": "dataset",
+      "video": "IMG_1300.MOV"
+    },
+    "bit/IMG_1301.MOV": {
+      "clip_stem": "IMG_1301",
+      "frame_step": null,
+      "object": "bit",
+      "path": "data/raw/clips/bit/IMG_1301.MOV",
+      "saved_images": 67,
+      "status": "dataset",
+      "video": "IMG_1301.MOV"
+    },
+    "wrench/IMG_1292.MOV": {
+      "clip_stem": "IMG_1292",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1292.MOV",
+      "processed_frames": 2,
+      "seen_frames": 2,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1292.MOV"
+    },
+    "wrench/IMG_1293.MOV": {
+      "clip_stem": "IMG_1293",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1293.MOV",
+      "processed_frames": 59,
+      "seen_frames": 59,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1293.MOV"
+    },
+    "wrench/IMG_1294.MOV": {
+      "clip_stem": "IMG_1294",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1294.MOV",
+      "processed_frames": 69,
+      "seen_frames": 69,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1294.MOV"
+    },
+    "wrench/IMG_1295.MOV": {
+      "clip_stem": "IMG_1295",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1295.MOV",
+      "processed_frames": 65,
+      "seen_frames": 65,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1295.MOV"
+    },
+    "wrench/IMG_1296.MOV": {
+      "clip_stem": "IMG_1296",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1296.MOV",
+      "processed_frames": 59,
+      "seen_frames": 59,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1296.MOV"
+    },
+    "wrench/IMG_1925.MOV": {
+      "clip_stem": "IMG_1925",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1925.MOV",
+      "processed_frames": 28,
+      "seen_frames": 28,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1925.MOV"
+    },
+    "wrench/IMG_1926.MOV": {
+      "clip_stem": "IMG_1926",
+      "object": "wrench",
+      "path": "data/raw/clips/wrench/IMG_1926.MOV",
+      "processed_frames": 20,
+      "seen_frames": 20,
+      "skipped_frames": 0,
+      "status": "dataset",
+      "video": "IMG_1926.MOV"
+    }
+  }
+}

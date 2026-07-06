@@ -4,8 +4,8 @@ HOW TO USE THIS FILE
 
 1. Train the detector once (this makes models/yolo_detector.pt):
 
-       python data/auto_label_frames.py --overwrite
-       python ml/train_yolo.py
+       ./scripts/process.sh
+       ./scripts/train.sh
 
 2. Run the live webcam detector:
 
@@ -102,8 +102,8 @@ def load_model(weights_path: str):
         sys.exit(
             f"Could not find the trained model: {weights_path}\n"
             "Train it first with:\n"
-            "    python data/auto_label_frames.py --overwrite\n"
-            "    python ml/train_yolo.py"
+            "    ./scripts/process.sh\n"
+            "    ./scripts/train.sh"
         )
     try:
         from ultralytics import YOLO
