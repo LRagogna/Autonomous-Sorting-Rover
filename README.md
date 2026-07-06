@@ -95,10 +95,17 @@ Hold a wrench or a bit in front of your webcam. When the model is confident, a g
 
 ## Setup Notes
 
-Install Python dependencies (this includes `ultralytics` and PyTorch, which is a large download):
+On a development computer, install the desktop/ML Python dependencies with:
 
 ```bash
 pip install -r requirements.txt
+```
+
+Do not run that file on the Raspberry Pi. The Pi runtime dependency file is
+small:
+
+```bash
+pip install -r requirements-pi.txt
 ```
 
 On Raspberry Pi OS, install Picamera2 through the system package manager:
@@ -106,6 +113,43 @@ On Raspberry Pi OS, install Picamera2 through the system package manager:
 ```bash
 sudo apt install python3-picamera2
 ```
+
+## Raspberry Pi Runtime Checkout
+
+The Raspberry Pi should be a runtime checkout, not a development or training
+checkout. Today, ML training does **not** run on the Pi: videos, datasets,
+auto-labeling, YOLO training, desktop detector experiments, model run outputs,
+CAD files, and project docs stay on a development machine. The Pi currently
+needs only the control entry point, Arduino sketch, ROS 2 control source, the
+Raspberry Pi hardware tests, and small setup/config files used to operate or
+update those pieces.
+
+Configure the Pi checkout once:
+
+```bash
+./scripts/setup_pi_sparse_checkout.sh
+git pull
+```
+
+That script allowlists only:
+
+```text
+.gitattributes
+.gitignore
+README.md
+requirements-pi.txt
+scripts/setup_pi_sparse_checkout.sh
+src/main.py
+src/serial_drive_turns.ino
+tests/
+ros2_ws/README.md
+ros2_ws/rover_env.sh
+ros2_ws/src/
+```
+
+It also tells Git LFS not to fetch `data/`, `docs/`, `solidworks/`, `ml/`,
+`models/`, the computer `requirements.txt`, or the base YOLO weights during
+normal Pi pulls.
 
 ## Step 1: Extract Training Photos From Video
 
@@ -316,9 +360,16 @@ Then reference them from Markdown like:
 
 Images under `docs/images/` are tracked with Git LFS and are excluded from the Raspberry Pi checkout.
 
-## Dataset Storage
+## Dataset, CAD, And Documentation Storage
 
-Everything under `data/` and `docs/images/` is tracked with Git LFS so the dataset and documentation images can be visible on GitHub without making every clone download all of the large files immediately. Small text files (the frame-extractor code, `.gitkeep` placeholders, YOLO label `.txt` files, and `dataset.yaml`) are kept as normal text so they read normally on GitHub.
+Everything under `data/`, `docs/images/`, and `solidworks/`, plus the computer
+`requirements.txt`, is tracked with Git LFS so datasets, documentation media,
+CAD/export files, and desktop dependency lists can stay out of the Pi runtime
+checkout. Common SolidWorks/CAD extensions (`.sldprt`, `.sldasm`, `.slddrw`,
+`.stl`, `.step`, and `.stp`, including uppercase variants) are also tracked
+with LFS wherever they are added. Small text files (the frame-extractor code,
+`.gitkeep` placeholders, YOLO label `.txt` files, `dataset.yaml`, and
+`requirements-pi.txt`) are kept as normal text so they read normally on GitHub.
 
 On development machines that should download dataset files normally, use:
 
@@ -327,24 +378,39 @@ git lfs install
 git pull
 ```
 
-On the Raspberry Pi, configure sparse checkout once so nothing under `data/` or `docs/images/` appears in the Pi working tree during normal pulls:
+On the Raspberry Pi, configure sparse checkout once so only runtime files appear
+in the Pi working tree during normal pulls:
 
 ```bash
 ./scripts/setup_pi_sparse_checkout.sh
 git pull
 ```
 
-If the Raspberry Pi does not have that script yet, run the same setup manually before pulling:
+If the Raspberry Pi does not have that script yet, run the same setup manually
+before pulling:
 
 ```bash
 git lfs install --local --skip-smudge
-git config --local lfs.fetchexclude "data/**,docs/images/**"
+git config --local lfs.fetchexclude "data/**,docs/**,solidworks/**,ml/**,models/**,requirements.txt,yolov8n.pt"
 git sparse-checkout init --no-cone
-git sparse-checkout set "/*" "!/data/" "!/docs/images/"
+git sparse-checkout set \
+  "/.gitattributes" \
+  "/.gitignore" \
+  "/README.md" \
+  "/requirements-pi.txt" \
+  "/scripts/setup_pi_sparse_checkout.sh" \
+  "/src/main.py" \
+  "/src/serial_drive_turns.ino" \
+  "/tests/" \
+  "/ros2_ws/README.md" \
+  "/ros2_ws/rover_env.sh" \
+  "/ros2_ws/src/"
 git pull
 ```
 
-This keeps the dataset visible on GitHub while keeping the Raspberry Pi checkout focused on runtime code and lightweight text docs.
+This keeps the dataset, documentation media, CAD files, ML training workspace,
+model run outputs, and desktop tools visible in the repository while keeping
+the Raspberry Pi checkout focused on operational rover code and hardware tests.
 
 ## Development Status
 

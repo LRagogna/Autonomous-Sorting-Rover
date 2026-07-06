@@ -1,0 +1,5 @@
+# Raspberry Pi runtime Python dependencies.
+#
+# Do not install requirements.txt on the Pi; that file is for the development
+# computer and includes heavyweight ML/CV packages.
+pyserial>=3.5

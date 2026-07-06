@@ -6,8 +6,8 @@ HOW TO USE THIS FILE
 2. Make sure the Raspberry Pi camera is connected and enabled.
 3. Install the needed packages:
 
-       sudo apt install python3-picamera2
-       pip install -r requirements.txt
+       sudo apt install python3-picamera2 python3-opencv python3-numpy
+       pip install -r requirements-pi.txt
 
 4. Start the script:
 
