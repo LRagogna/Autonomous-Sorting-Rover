@@ -57,8 +57,8 @@ import cv2
 # This file lives in src/, so parents[1] is the project folder above src/.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-# The trained detector that ml/train_yolo.py wrote.
-DEFAULT_WEIGHTS = PROJECT_ROOT / "models" / "yolo_detector.pt"
+# The active trained detector (a copy of the version marked active in the GUI).
+DEFAULT_WEIGHTS = PROJECT_ROOT / "models" / "active_model.pt"
 
 # Green, in OpenCV's Blue-Green-Red color order.
 GREEN = (0, 255, 0)
@@ -101,9 +101,8 @@ def load_model(weights_path: str):
     if not Path(weights_path).exists():
         sys.exit(
             f"Could not find the trained model: {weights_path}\n"
-            "Train it first with:\n"
-            "    ./scripts/process.sh\n"
-            "    ./scripts/train.sh"
+            "Train and activate one first in the control center:\n"
+            "    ./scripts/run_workflow_gui.sh"
         )
     try:
         from ultralytics import YOLO

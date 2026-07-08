@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Start the local browser GUI for uploading clips, processing data, reviewing
-# frames, and training the YOLO detector.
+# Start the local browser control center: upload clips, process data, review and
+# edit labels, train versioned models, test the detector, and deploy.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -11,4 +11,4 @@ else
   PY="python3"
 fi
 
-"$PY" tools/workflow_gui.py "$@"
+"$PY" gui/app.py "$@"

@@ -31,6 +31,10 @@ docs/context.md
 # Logs and runtime output
 *.log
 logs/
+log/
+
+# Local backups created by the GUI migration / Wipe Data steps
+backups/
 
 # Raspberry Pi / camera captures and generated media
 captures/

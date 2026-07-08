@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Split raw object clips into JPG frames for training.
+# Split raw clips into JPG frames for training (extraction only, no labeling).
 #
 # Put videos in:
-#   data/raw/clips/<object>/<video_file>
+#   data/raw_videos/<class>/<video_file>
 #
 # This writes frames to:
-#   data/raw/photos/<object>/<clip_name>__frame_<frame_number>.jpg
+#   data/frames/<class>/<class>__<clip>__frame_<number>.jpg
 #
 # USAGE
 #   ./scripts/split_frames.sh
@@ -22,8 +22,8 @@ fi
 
 FRAME_STEP="${FRAME_STEP:-15}"
 
-echo "==> Splitting clips in data/raw/clips into JPG frames..."
-"$PY" data/extract_video_frames.py --all --frame-step "$FRAME_STEP" --image-format jpg
+echo "==> Splitting clips in data/raw_videos into JPG frames..."
+"$PY" ml/extract_frames.py --all --frame-step "$FRAME_STEP"
 
 echo ""
-echo "==> Frames are in data/raw/photos/<object>/"
+echo "==> Frames are in data/frames/<class>/"

@@ -23,29 +23,34 @@ The current proof of concept focuses on computer vision. There are two vision pi
 ```text
 README.md
 requirements.txt
+gui/                             # modular browser control center (stdlib server)
+  app.py                         # entry point: python gui/app.py
+  server.py  jobs.py  state.py   # routing, background jobs, sidebar/checklist state
+  api/                           # one module per tab: upload, dataset, review, train, ...
+  web/                           # index.html, app.css, app.js, tabs/*.js
+ml/                              # all dataset + model logic (importable + CLI)
+  dataset_utils.py  label_utils.py
+  extract_frames.py              # clips -> frames
+  auto_label_frames.py           # frames -> YOLO dataset (draws the boxes)
+  process_dataset.py             # extract + auto-label in one step
+  train_yolo.py                  # train a versioned detector
+  test_yolo.py  migrate_layout.py
 data/
-  extract_video_frames.py        # turn videos into photos
-  auto_label_frames.py           # turn photos into a YOLO dataset (draws the boxes)
-  capture_webcam_training_images.py
-  raw/
-    clips/<object>/<clip>        # original recorded videos
-    photos/<object>/             # JPG frames created by split_frames.sh
-  labels/
-    object_classes.txt           # the master list of objects: "id name"
-    dataset.yaml                 # YOLO dataset config created by process.sh
-    <object>/                    # processed images, labels, and review images
-ml/
-  train_yolo.py                  # train the detector
+  raw_videos/<class>/<clip>      # original recorded videos
+  frames/<class>/                # extracted JPG frames
+  yolo_dataset/                  # images/{train,val}, labels/{train,val}, dataset.yaml
+  rejected/                      # frames failed in review (recoverable)
+  retrain_queue/                 # live-test failures to correct later
+  meta/                          # object_classes.txt, review_state.json, processed_clips.json
 models/
-  yolo_detector.pt               # the trained detector (created by train_yolo.py)
+  yolo_detector_v1.pt, v2, ...   # versioned trained weights (never overwritten)
+  active_model.pt                # copy of the version marked active
+  registry.json                  # metrics + metadata per version
 src/
-  desktop_yolo_detector.py       # live webcam detector (draws the green boxes)
+  desktop_yolo_detector.py       # live webcam detector (uses active_model.pt)
 scripts/
-  run_workflow_gui.sh            # browser GUI for the training workflow
-  split_frames.sh                # manual/debug command to split raw clips into JPG frames
-  process.sh                     # split new clips and add new frames to the YOLO dataset
-  train.sh                       # train YOLO from the processed dataset
-  run_desktop_detector.sh
+  run_workflow_gui.sh            # launch the browser control center (gui/app.py)
+  split_frames.sh  process.sh  train.sh  run_desktop_detector.sh
   setup_pi_sparse_checkout.sh
 tests/
   rectangle_detect.py            # Raspberry Pi green-color detection proof of concept
@@ -53,46 +58,46 @@ tests/
 
 ## Training Workflow
 
-The normal training workflow is:
+The recommended way to run the whole pipeline is the **training control
+center**, a local browser app:
 
 ```bash
-./scripts/process.sh
-./scripts/train.sh
+./scripts/run_workflow_gui.sh        # or: python gui/app.py
 ```
 
-`process.sh` is the one-button data prep step. It first slices any new clips in
-`data/raw/clips/` into JPG frames under `data/raw/photos/<object>/`, then turns
-new frames into YOLO labels, processed train/check images, and per-object review
-folders under `data/labels/<object>/`.
+It opens a tab-based, step-by-step workflow with a persistent status sidebar and
+pipeline checklist:
 
-After a clip has been added to the dataset, it is recorded in
-`data/raw/photos/.processed_clips.json`. Future runs skip tracked clips, so old
-videos are not split or added again. If you delete a bad review frame, that raw
-frame is also recorded in `data/raw/photos/.deleted_frames.json` so it does not
-come back later.
+1. **Upload Clips** — pick/create a class and add videos to `data/raw_videos/<class>/`.
+2. **Process Dataset** — extract frames (choose the interval) and auto-draw a box
+   on each, building `data/yolo_dataset/`.
+3. **Review / Edit Labels** — check every box; pass, fail, or **drag/redraw** it
+   and change its class. Failed frames move to `data/rejected/` (recoverable).
+4. **Train Model** — pick a preset, set the train/val split (by whole video), and
+   train. Each run saves a new `models/yolo_detector_vN.pt`; you choose when to
+   mark one active.
 
-`train.sh` trains the detector from `data/labels/dataset.yaml` and writes the
-final model to `models/yolo_detector.pt`. Pass training options straight
-through, for example `./scripts/train.sh --epochs 60 --scale 0.9`, or force the
-CPU with `DEVICE=cpu ./scripts/train.sh`.
-
-To keep more frames per video when splitting:
+Everything the GUI does is backed by plain scripts you can also run from a
+terminal:
 
 ```bash
-FRAME_STEP=10 ./scripts/process.sh
+./scripts/process.sh                 # extract frames + auto-label new clips
+./scripts/train.sh                   # train from data/yolo_dataset/dataset.yaml
+FRAME_STEP=10 ./scripts/process.sh   # keep more frames per video
 ```
 
-You can also manage the same workflow from a local browser GUI:
+`process.sh` runs `ml/process_dataset.py`, which extracts frames to
+`data/frames/<class>/` and writes the YOLO dataset to `data/yolo_dataset/`.
+Clips already handled are recorded in `data/meta/processed_clips.json` and
+skipped on future runs. `train.sh` trains from `data/yolo_dataset/dataset.yaml`,
+saves a versioned model, and (for your first model, or when you ask) copies it to
+`models/active_model.pt` — the file the live detector and rover use.
 
-```bash
-./scripts/run_workflow_gui.sh
-```
-
-The GUI lets you drag and drop multiple videos into `data/raw/clips/<object>/`,
-run Process Data and Train Data from buttons, and review/delete generated
-frames. When you delete a review frame, the matching raw frame and YOLO
-label/image are also removed, and the deletion is recorded so that frame does
-not come back on the next processing run.
+> **Note:** the deeper "Step 1–4" sections below describe this same pipeline and
+> predate the new `data/` layout; the control center is now the primary
+> interface. Paths like `data/raw/clips` are now `data/raw_videos`,
+> `data/raw/photos` are now `data/frames`, and `data/labels` is now
+> `data/yolo_dataset` + `data/meta`.
 
 ## The Vision Pipeline In Steps
 
