@@ -12,6 +12,7 @@ frame is passed, failed, or its box is edited during review.
 from __future__ import annotations
 
 import shutil
+import time
 from pathlib import Path
 
 from ml import dataset_utils as du
@@ -212,8 +213,8 @@ def promote_frame_to_dataset(image_src: Path, stem: str, boxes: list[dict],
                              split: str = "train") -> dict:
     """Copy a corrected frame + write its label into the training dataset.
 
-    Used by the retraining queue (Phase 2) to fold a corrected failure frame
-    back into yolo_dataset/.
+    Used by the retraining queue to fold a corrected failure frame back into
+    yolo_dataset/.
     """
     split = split if split in du.SPLITS else "train"
     dst_image = du.dataset_image_path(stem, split)
@@ -226,3 +227,90 @@ def promote_frame_to_dataset(image_src: Path, stem: str, boxes: list[dict],
     state[stem] = {"state": "edited", "split": split, "class": du.class_from_stem(stem)}
     du.save_review_state(state)
     return {"stem": stem, "split": split, "image": du.repo_relative(dst_image)}
+
+
+# ---------------------------------------------------------------------------
+# Retraining queue: failure frames captured during live testing (Tab 5),
+# corrected and folded back into the dataset (Tab 6).
+# ---------------------------------------------------------------------------
+def retrain_image_path(name: str) -> Path:
+    return du.RETRAIN_IMAGES_DIR / du.safe_filename(name)
+
+
+def save_retrain_frame(image_bytes: bytes, meta: dict) -> dict:
+    """Store a captured failure frame + its metadata sidecar in the queue."""
+    du.RETRAIN_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    ftype = du.safe_filename(str(meta.get("failureType", "failure")) or "failure")[:40]
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    image_path = du.unique_path(du.RETRAIN_IMAGES_DIR / f"{stamp}_{ftype}.jpg")
+    image_path.write_bytes(image_bytes)
+    entry = {
+        "image": image_path.name,
+        "created": time.time(),
+        "status": "pending",
+        "failureType": str(meta.get("failureType", "")),
+        "model": str(meta.get("model", "")),
+        "note": str(meta.get("note", "")),
+        "boxes": meta.get("boxes", []),
+    }
+    du.write_json(image_path.with_suffix(".json"), entry)
+    return entry
+
+
+def list_retrain_frames() -> list[dict]:
+    """List every retrain-queue entry (pending, corrected, discarded)."""
+    items: list[dict] = []
+    if not du.RETRAIN_IMAGES_DIR.exists():
+        return items
+    for sidecar in sorted(du.RETRAIN_IMAGES_DIR.glob("*.json")):
+        data = du.read_json(sidecar, {})
+        if not isinstance(data, dict):
+            continue
+        name = data.get("image", sidecar.stem + ".jpg")
+        data["name"] = name
+        data["hasImage"] = (du.RETRAIN_IMAGES_DIR / name).exists()
+        items.append(data)
+    return items
+
+
+def retrain_counts() -> dict:
+    counts = {"total": 0, "pending": 0, "corrected": 0, "discarded": 0}
+    for item in list_retrain_frames():
+        counts["total"] += 1
+        counts[item.get("status", "pending")] = counts.get(item.get("status", "pending"), 0) + 1
+    return counts
+
+
+def _update_retrain_sidecar(name: str, **changes) -> None:
+    sidecar = retrain_image_path(name).with_suffix(".json")
+    data = du.read_json(sidecar, {})
+    if not isinstance(data, dict):
+        data = {}
+    data.update(changes)
+    du.write_json(sidecar, data)
+
+
+def discard_retrain_frame(name: str) -> dict:
+    """Mark a failure frame useless and remove its image (keep the record)."""
+    image = retrain_image_path(name)
+    _update_retrain_sidecar(name, status="discarded")
+    if image.exists():
+        image.unlink()
+    return {"ok": True, "status": "discarded"}
+
+
+def promote_retrain_frame(name: str, boxes: list[dict], split: str = "train") -> dict:
+    """Fold a corrected failure frame into the training dataset."""
+    image = retrain_image_path(name)
+    if not image.exists():
+        raise ValueError("Retrain frame not found (already corrected or discarded).")
+    if not boxes:
+        raise ValueError("Draw at least one box before adding this frame.")
+    names = du.class_names()
+    cls_id = int(boxes[0].get("cls", 0))
+    class_name = names[cls_id] if 0 <= cls_id < len(names) else (names[0] if names else "object")
+    stem = f"{class_name}__retrain_{Path(name).stem}"
+    result = promote_frame_to_dataset(image, stem, boxes, split)
+    _update_retrain_sidecar(name, status="corrected", promotedStem=stem)
+    image.unlink()
+    return {"ok": True, "status": "corrected", **result}
