@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from gui import jobs
+from gui import state as state_module
 from gui.server import route
 from ml import dataset_utils as du
 from ml import extract_frames as ef
+from ml import label_utils as lu
 
 
 @route("GET", "/api/dataset/clips")
@@ -50,3 +53,20 @@ def start_processing(req):
 
     job = jobs.start_job("process_dataset", command)
     return {"ok": True, "job": jobs.public_job(job)}
+
+
+@route("POST", "/api/dataset/background")
+def add_background_images(req):
+    """Upload background/negative images (no objects) straight into the dataset."""
+    fields, files = req.multipart()
+    if not files:
+        raise ValueError("No images were uploaded.")
+    added, skipped = 0, 0
+    for item in files:
+        if Path(item["filename"]).suffix.lower() not in du.IMAGE_EXTENSIONS:
+            skipped += 1
+            continue
+        lu.add_background_image(item["content"], "train", tag="upload")
+        added += 1
+    return {"ok": True, "added": added, "skipped": skipped,
+            "background": du.count_background_images(), "state": state_module.build_state()}

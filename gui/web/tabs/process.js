@@ -35,12 +35,42 @@
           </div>
         </div>
         <div id="prList" class="select-list" style="margin-top:10px"></div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <h2 style="font-size:16px">Background images (no objects)</h2>
+        <p class="lead">Add photos of <b>empty scenes</b> — the bare mat, the table, your hand with nothing in it,
+          cluttered rooms. These become negative examples (empty labels) that teach the model what "nothing" looks
+          like, which stops it from drawing boxes when no object is present. Aim for roughly 10% of your dataset.</p>
+        <p class="muted">Currently <b id="prBgCount">0</b> background image(s) in the dataset.</p>
+        <div class="row" style="margin-top:8px">
+          <input type="file" id="prBgFiles" accept="image/*" multiple>
+          <button class="btn" id="prBgAdd">Add background images</button>
+        </div>
+        <p class="muted" id="prBgMsg"></p>
       </div>`;
 
     el.querySelector("#prRun").addEventListener("click", () => run(el).catch((e) => App.showError(e)));
     el.querySelector("#prNew").addEventListener("click", () => setAll(el, "new"));
     el.querySelector("#prAll").addEventListener("click", () => setAll(el, "all"));
     el.querySelector("#prNone").addEventListener("click", () => setAll(el, "none"));
+    el.querySelector("#prBgAdd").addEventListener("click", () => addBackground(el).catch((e) => App.showError(e)));
+  }
+
+  async function addBackground(el) {
+    const input = el.querySelector("#prBgFiles");
+    const files = Array.from(input.files || []);
+    if (!files.length) throw new Error("Choose one or more background images first.");
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    const res = await fetch("/api/dataset/background", { method: "POST", body: form });
+    const payload = await res.json();
+    if (!res.ok) throw new Error(payload.error || "Upload failed");
+    input.value = "";
+    el.querySelector("#prBgMsg").textContent =
+      `Added ${payload.added} background image(s)${payload.skipped ? `, skipped ${payload.skipped} non-image` : ""}.`;
+    el.querySelector("#prBgCount").textContent = payload.background;
+    App.refresh().catch(() => {});
   }
 
   async function load(el) {
@@ -96,6 +126,10 @@
     id: "process", label: "Process Dataset",
     mount(el) { render(el); },
     onShow() { load(this.el).catch((e) => App.showError(e)); },
+    onState(state) {
+      const count = this.el.querySelector("#prBgCount");
+      if (count && state) count.textContent = state.totals.background || 0;
+    },
     onJobDone(job) { if (job.kind === "process_dataset") load(this.el).catch(() => {}); },
   });
 })();

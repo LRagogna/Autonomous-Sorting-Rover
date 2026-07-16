@@ -41,6 +41,14 @@ def promote(req):
             "state": state_module.build_state()}
 
 
+@route("POST", "/api/retrain/background")
+def add_background(req):
+    """Turn a false-positive capture into a background (negative) training image."""
+    result = lu.background_retrain_frame(str(req.json().get("name", "")))
+    return {"ok": True, "result": result, "counts": lu.retrain_counts(),
+            "state": state_module.build_state()}
+
+
 @route("POST", "/api/retrain/discard")
 def discard(req):
     result = lu.discard_retrain_frame(str(req.json().get("name", "")))

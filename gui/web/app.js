@@ -104,6 +104,7 @@
           <div class="kv"><span>Reviewed</span><b>${s.totals.reviewed} / ${s.totals.images}</b></div>
           <div class="kv"><span>Needs review</span><b>${s.totals.unreviewed}</b></div>
           <div class="kv"><span>Rejected</span><b>${s.totals.failed}</b></div>
+          <div class="kv"><span>Background imgs</span><b>${s.totals.background || 0}</b></div>
           <div class="kv"><span>Retrain queue</span><b>${s.totals.retrainPending}</b></div>
         </div>`;
 

@@ -68,6 +68,7 @@ def build_state() -> dict:
     versions = du.model_version_files()
     latest_version = max((int(du._MODEL_VERSION_RE.match(p.name).group(1)) for p in versions), default=0)
     retrain_pending = du.count_images(du.RETRAIN_IMAGES_DIR)
+    background_images = du.count_background_images()
 
     labels_exist = any((du.DATASET_LABELS_DIR / s).exists() and any((du.DATASET_LABELS_DIR / s).iterdir())
                        for s in du.SPLITS)
@@ -86,7 +87,8 @@ def build_state() -> dict:
         "project": {"name": project.get("name", "Autonomous Sorting Rover")},
         "classes": classes,
         "perClass": per_class,
-        "totals": {"classes": len(classes), "retrainPending": retrain_pending, **totals},
+        "totals": {"classes": len(classes), "retrainPending": retrain_pending,
+                   "background": background_images, **totals},
         "model": {
             "active": du.active_model_name(),
             "latestVersion": latest_version,

@@ -175,15 +175,27 @@
         <select id="rqClass" style="width:auto" ${M.selected < 0 ? "disabled" : ""}>${options || '<option>no classes</option>'}</select></label>
       <button class="btn ghost" id="rqDel" ${M.selected < 0 ? "disabled" : ""}>Delete box</button>
       <button class="btn" id="rqAdd" ${M.boxes.length ? "" : "disabled"}>Add to dataset</button>
+      <button class="btn ghost" id="rqBg" title="No object here — use as a negative example">Add as background</button>
       <button class="btn danger" id="rqDiscard">Discard</button>
-      <span class="muted">Drag on empty space to draw a box · drag/handles to adjust</span>`;
+      <span class="muted">Drag to draw a box · or use <b>Add as background</b> if this was a false positive (no object)</span>`;
     root.querySelector("#rqClass").addEventListener("change", (e) => {
       M.defaultClass = Number(e.target.value);
       if (M.selected >= 0) { M.boxes[M.selected].cls = M.defaultClass; draw(el); }
     });
     root.querySelector("#rqDel").addEventListener("click", () => { if (M.selected >= 0) { M.boxes.splice(M.selected, 1); M.selected = M.boxes.length ? 0 : -1; draw(el); renderActions(el); renderInfo(el); } });
     root.querySelector("#rqAdd").addEventListener("click", () => promote(el).catch((x) => App.showError(x)));
+    root.querySelector("#rqBg").addEventListener("click", () => addBackground(el).catch((x) => App.showError(x)));
     root.querySelector("#rqDiscard").addEventListener("click", () => discard(el).catch((x) => App.showError(x)));
+  }
+
+  async function addBackground(el) {
+    const item = current(); if (!item) return;
+    if (M.boxes.length && !window.confirm("Add this as a BACKGROUND image (no objects)? Any boxes you drew will be ignored.")) return;
+    const res = await App.postJson("/api/retrain/background", { name: item.name });
+    M.counts = res.counts;
+    App.toast("Added as a background (negative) image");
+    await App.refresh();
+    await load(el);
   }
 
   async function promote(el) {

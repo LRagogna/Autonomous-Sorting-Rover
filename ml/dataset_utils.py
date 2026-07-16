@@ -88,6 +88,11 @@ SPLITS = ("train", "val")
 # data/rejected/ so YOLO never sees them (but they can be restored).
 REVIEW_STATES = ("unreviewed", "passed", "failed", "edited")
 
+# Background (negative) images teach the detector what "nothing" looks like so it
+# stops drawing boxes on empty scenes. They live in the dataset with an EMPTY
+# label file and use this filename prefix so they are never mistaken for a class.
+BG_PREFIX = "bg__"
+
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -164,6 +169,11 @@ def frame_stem(class_name: str, video_path: Path, frame_index: int) -> str:
 def class_from_stem(stem: str) -> str:
     """Recover the class name from a frame/dataset stem."""
     return stem.split("__", 1)[0] if "__" in stem else stem
+
+
+def is_background_stem(stem: str) -> bool:
+    """Return True for background/negative dataset images (empty labels)."""
+    return stem.startswith(BG_PREFIX)
 
 
 def find_source_video(class_name: str, video_stem: str) -> Path | None:
@@ -437,6 +447,20 @@ def count_images(directory: Path) -> int:
         1 for p in directory.rglob("*")
         if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
     )
+
+
+def count_background_images() -> int:
+    """Count background/negative images across the train + val splits."""
+    total = 0
+    for split in SPLITS:
+        directory = DATASET_IMAGES_DIR / split
+        if directory.exists():
+            total += sum(
+                1 for p in directory.iterdir()
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+                and is_background_stem(p.stem)
+            )
+    return total
 
 
 def video_duration_seconds(video_path: Path) -> float:

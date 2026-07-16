@@ -32,6 +32,7 @@
         <div class="cam-stage" id="dtStage" style="margin-top:14px">
           <video id="dtVideo" autoplay playsinline muted></video>
           <canvas id="dtOverlay"></canvas>
+          <div class="no-obj" id="dtNoObj" hidden>No objects in frame</div>
           <div class="cam-hint" id="dtHint">Choose a model and press <b>Start</b>.</div>
         </div>
 
@@ -43,6 +44,7 @@
           <div>
             <label class="field">Capture a mistake for retraining</label>
             <div class="fail-btns">
+              <button class="btn ghost" data-type="false_positive" disabled title="It drew a box on nothing">False Positive</button>
               <button class="btn ghost" data-type="missed" disabled>Missed Object</button>
               <button class="btn ghost" data-type="wrong_class" disabled>Wrong Class</button>
               <button class="btn ghost" data-type="bad_box" disabled>Bad Box</button>
@@ -129,6 +131,7 @@
     el.querySelector("#dtStart").disabled = false;
     el.querySelector("#dtStop").disabled = true;
     el.querySelector("#dtHint").hidden = false;
+    el.querySelector("#dtNoObj").hidden = true;
     el.querySelector("#dtFps").textContent = "";
     failButtons(el, false);
     setStatus(el, "Idle");
@@ -171,7 +174,9 @@
       drawDetections(el, M.detections);
       renderList(el);
       recordFps(el, t0);
-      setStatus(el, M.detections.length ? `${M.detections.length} object(s) detected` : "Detecting — nothing yet", "running");
+      const n = M.detections.length;
+      el.querySelector("#dtNoObj").hidden = n > 0;
+      setStatus(el, n ? `${n} object(s) in frame` : "No objects in frame", n ? "running" : "");
     } catch (error) {
       setStatus(el, "Detector error: " + (error.message || error), "failed");
     } finally {

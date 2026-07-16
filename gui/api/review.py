@@ -35,7 +35,8 @@ def _all_items() -> list[dict]:
         directory = du.DATASET_IMAGES_DIR / split
         if directory.exists():
             for path in sorted(directory.iterdir()):
-                if path.is_file() and path.suffix.lower() in du.IMAGE_EXTENSIONS:
+                if (path.is_file() and path.suffix.lower() in du.IMAGE_EXTENSIONS
+                        and not du.is_background_stem(path.stem)):
                     add(path.stem, split)
     if du.REJECTED_IMAGES_DIR.exists():
         for path in sorted(du.REJECTED_IMAGES_DIR.iterdir()):

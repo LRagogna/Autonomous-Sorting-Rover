@@ -299,6 +299,36 @@ def discard_retrain_frame(name: str) -> dict:
     return {"ok": True, "status": "discarded"}
 
 
+def add_background_image(image_bytes: bytes, split: str = "train", tag: str = "bg") -> dict:
+    """Add a negative/background image (empty label) to the dataset.
+
+    Background images have NO boxes; YOLO uses them to learn what an empty scene
+    looks like, which is the fix for false positives on nothing.
+    """
+    split = split if split in du.SPLITS else "train"
+    tag = (du.safe_filename(tag).replace(".", "_")[:30]) or "bg"
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    image_path = du.unique_path(du.dataset_image_path(f"{du.BG_PREFIX}{tag}_{stamp}", split))
+    stem = image_path.stem
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(image_bytes)
+    label_path = du.dataset_label_path(stem, split)
+    label_path.parent.mkdir(parents=True, exist_ok=True)
+    label_path.write_text("")  # empty label = background / negative example
+    return {"stem": stem, "split": split, "image": du.repo_relative(image_path)}
+
+
+def background_retrain_frame(name: str, split: str = "train") -> dict:
+    """Turn a captured false-positive frame into a background (negative) image."""
+    image = retrain_image_path(name)
+    if not image.exists():
+        raise ValueError("Retrain frame not found (already handled).")
+    result = add_background_image(image.read_bytes(), split, tag="fp")
+    _update_retrain_sidecar(name, status="corrected", promotedStem=result["stem"], background=True)
+    image.unlink()
+    return {"ok": True, "status": "corrected", "background": True, **result}
+
+
 def promote_retrain_frame(name: str, boxes: list[dict], split: str = "train") -> dict:
     """Fold a corrected failure frame into the training dataset."""
     image = retrain_image_path(name)
