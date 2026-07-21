@@ -240,3 +240,44 @@ git pull
 - Removed bad bit examples from the dataset so the detector is trained on cleaner object views.
 - Cleaned up old review preview images after they had served their purpose, including the remaining `bit` review previews in the current working tree.
 - Re-ran YOLO training outputs after the dataset and workflow cleanup so the detector reflects the cleaner training process.
+
+## Week Of July 13, 2026
+
+### GUI Workflow And Data Collection
+
+- Spent most of the past week improving the training GUI workflow so the whole machine-learning loop is easier and faster to run from one place.
+- Continued collecting data for the ML training by recording and adding more object clips, growing the dataset the detector learns from.
+
+## July 20, 2026
+
+### Wheel Distance Sensing Goal
+
+- Set a new goal for the mobility system: make the rover drive a real, measured distance instead of just moving for a guessed amount of time. The target behavior is that a command like `forward 1 ft` actually travels one foot.
+- Chose to measure distance with a wheel odometer built from a TCRT5000 infrared reflectance sensor. Strips of white tape are placed on the black rover wheel, and the sensor "sees" each white strip pass by as the wheel spins.
+- Each white strip that passes counts as one "pulse." Counting pulses tells the rover how far the wheel has rolled, which is how far the rover has driven.
+
+### IR Sensor Test Sketch
+
+- Added `tests/ir_wheel_tape_pulse_test/ir_wheel_tape_pulse_test.ino`, a standalone Arduino test that drives the car forward a requested distance using tape pulses.
+- Reused the same motor wiring as the working `src/serial_drive_turns.ino` (Elegoo Smart Robot Car V4.0), so the motor-driving part was already proven.
+- Wired the TCRT5000 sensor to 5V, ground, and digital pin D10, and noted the module's trim potentiometer must be adjusted so the signal flips cleanly between white tape and black wheel.
+- Added serial commands (`forward 1 ft`, `forward 36 in`, `f 120`, `stop`) at 9600 baud, plus a live telemetry line that prints the raw sensor value, whether it currently sees white, the pulse count, distance, speed, and RPM for debugging.
+
+### Distance Math
+
+- Measured the wheel at 2.6 inches across and placed 2 tape marks per revolution.
+- Worked out that each pulse is about 4.084 inches of travel (wheel circumference divided by 2 marks).
+- A `forward 1 ft` command therefore needs about 3 pulses (12 inches divided by 4.084).
+
+### Tuning Problems Found And Fixed
+
+- The car moved far too slowly at first. The drive speed was set low enough that the wheels nearly stalled, so raised the motor power (PWM) from 150 to 200.
+- The sensor was counting short flashes of light (reflections and glints) as if they were real tape marks, which made the car stop after barely moving. Added a filter that only counts a pulse when the sensor sees white continuously for at least 15 milliseconds, since real tape gives a long steady signal and stray blips are brief.
+- Sorted out a false alarm about the wheels spinning in opposite directions; the forward wiring was correct and matches the turns sketch.
+
+### Decision: Trust The Tape, Not A Timer
+
+- An earlier version also had a backup timer that could stop the car after a calculated amount of time. This timer was firing too early and cutting the drive short before the real tape pulses were counted.
+- Decided distance should be measured purely by the white-tape pulses and removed the timer entirely, so the car drives until it has counted enough real pulses.
+- Tradeoff accepted: if the sensor ever reads nothing, the car keeps driving until a `stop` command is sent, so the plan is to confirm on each run that the pulse count climbs as the wheel turns.
+- Next step is a real-floor test of `forward 1 ft` to confirm the pulse count reaches 3 cleanly, then adjust the white-signal filter if any real pulses are missed.

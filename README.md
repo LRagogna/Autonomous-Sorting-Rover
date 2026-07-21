@@ -1,22 +1,66 @@
-ds# Autonomous-Sorting-Rover
+# Autonomous-Sorting-Rover
 
 Autonomous robotic rover that detects, collects, and sorts user-prompted items.
 
 ## Overview
 
-This project is an early-stage autonomous sorting rover. The rover is being designed around a tank-style chassis, Raspberry Pi based control, camera-driven object recognition, and an electromagnet for collecting metal debris.
+The Autonomous Sorting Rover is a self-built robot that uses a camera and a
+custom-trained object detector to find real objects, drive to them, and pick
+them up. The project spans four subsystems — **mobility**, **computer vision**,
+**object retrieval**, and **control/decision making** — and has grown from a
+concept into a working physical rover with a full machine-learning pipeline
+behind it.
 
-The current proof of concept focuses on computer vision. There are two vision pieces:
+Where the project stands today:
 
-1. A simple color test that draws boxes around green objects (`tests/rectangle_detect.py`).
-2. A **YOLO object detector** that learns your real objects (a wrench, a bit, and any objects you add later) and draws a **green box** around them in a live camera feed.
+- A **physical rover** is assembled: a tank-drive chassis with a Raspberry Pi 4,
+  a camera on a custom mount, an Arduino for low-level motor control, and a
+  relay-driven electromagnet for pickup.
+- A **YOLO object detector** trained on my own recordings reliably boxes four
+  objects — **bit, wrench, jenga, screwdriver** — in a live camera feed
+  (latest model mAP50 ≈ 0.99 across ~712 reviewed images).
+- A **browser-based Training Control Center** runs the entire ML loop end to
+  end: upload clips → auto-label → review → train → test → retrain → deploy.
+- Early **wheel odometry** work (an IR tape sensor on the drive wheel) is
+  underway so the rover can drive measured distances like "forward 1 ft."
 
-## Current Hardware Direction
+## The Physical Rover
 
-- Raspberry Pi 4 for main control and decision making
-- OV5647 Raspberry Pi camera for visual detection
-- Tank-style drive layout with each side moving together
-- Relay-controlled electromagnet for metal object pickup
+This is a real, hand-built machine, not just software. The physical platform so
+far:
+
+- **Chassis / mobility** — a tank-style drive (each side's wheels move together)
+  based on the Elegoo Smart Robot Car V4.0. An Arduino runs the motors and takes
+  simple serial commands (forward, backward, stop, calibrated in-place turns)
+  from the Raspberry Pi. See `src/serial_drive_turns.ino`.
+- **Brain** — a Raspberry Pi 4 as the high-level controller, mounted in a
+  **custom-designed holder** (SolidWorks) with an added cooling setup so it has a
+  fixed home on the rover instead of sitting loose.
+- **Eyes** — an OV5647 Raspberry Pi camera on a **custom camera mount** so the
+  vision system sits at a controlled height and angle.
+- **Hands** — a relay-controlled electromagnet for picking up metal debris,
+  proven out on the bench with a relay + LED stand-in before final wiring.
+- **Wheel odometry (in progress)** — a TCRT5000 IR reflectance sensor reads white
+  tape marks on a drive wheel as distance "pulses," so a command like
+  `forward 1 ft` travels a measured foot. Test sketch:
+  `tests/ir_wheel_tape_pulse_test/`.
+- **Mechanical design** — mounting parts for the electronics and camera are
+  modeled in SolidWorks (`solidworks/`) so the mechanical design evolves
+  alongside the electronics and code.
+
+> Build photos and clips are stored in date-labeled folders under `docs/images/`.
+> 🎥 Latest demo clip (2026-07-20):
+> [`docs/images/2026-07-20/IMG_2432.MOV`](docs/images/2026-07-20/IMG_2432.MOV).
+
+## The Vision, In Short
+
+Two camera pieces exist:
+
+1. A **YOLO object detector** — the main system. It learns your real objects from
+   short videos you record and draws a labeled **green box** around each one in a
+   live feed. It currently knows four classes and is easy to extend.
+2. A simple color test that boxes green objects (`tests/rectangle_detect.py`) — an
+   early proof of concept kept for reference.
 
 ## Repository Layout
 
@@ -65,17 +109,61 @@ center**, a local browser app:
 ./scripts/run_workflow_gui.sh        # or: python gui/app.py
 ```
 
-It opens a tab-based, step-by-step workflow with a persistent status sidebar and
-pipeline checklist:
+It opens a tab-based, step-by-step workflow with a persistent status sidebar
+(active model, class counts, review progress) and a pipeline checklist. The
+control center now has **eight tabs** covering the full lifecycle:
 
 1. **Upload Clips** — pick/create a class and add videos to `data/raw_videos/<class>/`.
 2. **Process Dataset** — extract frames (choose the interval) and auto-draw a box
-   on each, building `data/yolo_dataset/`.
+   on each, building `data/yolo_dataset/`. Also where you add **background images**
+   (empty scenes) as negative examples to cut false positives.
 3. **Review / Edit Labels** — check every box; pass, fail, or **drag/redraw** it
-   and change its class. Failed frames move to `data/rejected/` (recoverable).
-4. **Train Model** — pick a preset, set the train/val split (by whole video), and
-   train. Each run saves a new `models/yolo_detector_vN.pt`; you choose when to
+   and change its class, with keyboard shortcuts. Failed frames move to
+   `data/rejected/` (recoverable).
+4. **Train Model** — pick a preset (Quick / Normal / Stronger), set the train/val
+   split (by whole video), and train. Each run saves a new
+   `models/yolo_detector_vN.pt` and logs precision/recall/mAP; you choose when to
    mark one active.
+5. **Test Detector** — run any model version live on a webcam or video, watch the
+   boxes and FPS, and **capture a mistake** straight into the retraining queue.
+6. **Retraining Queue** — the failure frames you captured while testing. Draw the
+   correct box (or mark it a background/false positive) and fold it back into the
+   dataset — corrected mistakes are the most valuable training data.
+7. **Deploy** — pick the model the rover runs and copy it into the `deploy/`
+   bundle for the Raspberry Pi, with a deployment checklist.
+8. **Danger Zone** — guarded destructive actions (resets/cleanup).
+
+### GUI Walkthrough
+
+The full workflow, tab by tab:
+
+**1 · Upload Clips** — add recorded videos per object class.
+
+![Upload Clips tab](docs/images/2026-07-20/gui-1-upload-clips.png)
+
+**2 · Process Dataset** — turn clips into frames and auto-draw a box on each.
+
+![Process Dataset tab](docs/images/2026-07-20/gui-2-process-dataset.png)
+
+**3 · Review / Edit Labels** — pass, fail, or redraw every auto-generated box.
+
+![Review and Edit Labels tab](docs/images/2026-07-20/gui-3-review-edit.png)
+
+**4 · Train Model** — train a versioned detector; each run logs its metrics.
+
+![Train Model tab](docs/images/2026-07-20/gui-4-train-model.png)
+
+**5 · Test Detector** — run a model live and capture mistakes for retraining.
+
+![Test Detector tab](docs/images/2026-07-20/gui-5-test-detector.png)
+
+**6 · Retraining Queue** — correct captured failures and add them back.
+
+![Retraining Queue tab](docs/images/2026-07-20/gui-6-retraining-queue.png)
+
+**7 · Deploy** — copy the chosen model into the deploy bundle for the Pi.
+
+![Deploy tab](docs/images/2026-07-20/gui-7-deploy.png)
 
 Everything the GUI does is backed by plain scripts you can also run from a
 terminal:
@@ -416,13 +504,28 @@ the Raspberry Pi checkout focused on operational rover code and hardware tests.
 
 ## Development Status
 
-See `docs/progress_log.md` for dated project progress. Current work is focused on validating individual subsystems before integrating rover movement, vision, and object pickup behavior.
+See `docs/progress_log.md` for the full dated history. Highlights so far:
+
+- **Physical rover assembled** — tank-drive chassis, Raspberry Pi 4 (custom
+  holder + cooling), OV5647 camera on a custom mount, Arduino motor control over
+  serial, and a relay-driven electromagnet proven on the bench.
+- **Vision working across 4 classes** — bit, wrench, jenga, and screwdriver,
+  from ~712 self-recorded, human-reviewed images. Multiple model versions are
+  trained and tracked; the latest reaches mAP50 ≈ 0.99.
+- **Full ML control center** — an 8-tab browser GUI drives the whole loop
+  (upload → process → review → train → test → retrain → deploy), backed by
+  plain, runnable scripts.
+- **Deploy path defined** — models copy into a `deploy/` bundle for the
+  Raspberry Pi (CPU inference today; Coral Edge TPU export is a planned
+  follow-up).
+- **Wheel odometry in progress** — an IR tape sensor is being integrated so the
+  rover drives measured distances (`tests/ir_wheel_tape_pulse_test/`).
 
 Near-term goals:
 
-1. Grow the detection dataset with more objects and lighting conditions.
-2. Tune the YOLO detector for reliable boxes on the rover's real camera.
+1. Finish IR wheel-odometry integration so `forward 1 ft` reliably travels a foot.
+2. Keep growing the dataset with more objects, backgrounds, and lighting.
 3. Run the detector on the Raspberry Pi (or export it for on-device speed).
-4. Build a motor driver proof of concept.
-5. Validate electromagnet activation with final hardware.
-6. Define a simple rover state machine for search, approach, pickup, and release.
+4. Validate electromagnet activation with the final hardware.
+5. Define a simple rover state machine for search, approach, pickup, and release.
+6. Integrate vision + mobility + pickup into a first end-to-end sorting run.

@@ -29,6 +29,22 @@
       },
       "run_dir": "models/yolo_runs/detector",
       "version": 2
+    },
+    "yolo_detector_v3.pt": {
+      "base_model": "yolov8n.pt",
+      "batch": 8,
+      "created": 1784341053.975596,
+      "device": "cpu",
+      "epochs": 10,
+      "imgsz": 640,
+      "metrics": {
+        "map50": 0.99,
+        "map50_95": 0.7829,
+        "precision": 0.9906,
+        "recall": 0.9881
+      },
+      "run_dir": "models/yolo_runs/detector",
+      "version": 3
     }
   }
 }
