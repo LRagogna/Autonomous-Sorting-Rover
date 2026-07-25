@@ -20,6 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ml import dataset_utils as du  # noqa: E402
+from ml import dedupe  # noqa: E402
 from gui import server  # noqa: E402
 import gui.api  # noqa: E402,F401 - importing registers all /api routes
 
@@ -34,6 +35,16 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+
+    # Sweep away iCloud "conflict copy" duplicates (e.g. "IMG_1297 2.MOV",
+    # "tabs 2/") before anything reads the data folders. On this iCloud-synced
+    # Desktop those copies otherwise show up as phantom clips and duplicate
+    # frames that corrupt the dataset. Only ever removes a "<name> <N>" item when
+    # the real "<name>" exists next to it, so no unique file is lost.
+    removed = dedupe.remove_duplicates()
+    if removed:
+        print(f"Removed {len(removed)} iCloud duplicate file(s)/folder(s) before startup.")
+
     du.ensure_core_dirs()
     if not du.DATASET_YAML.exists():
         du.write_dataset_yaml()
