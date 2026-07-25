@@ -1,9 +1,9 @@
 # Autonomous Sorting Rover
 
 **A ground-up autonomous robot that finds real-world objects with a custom-trained
-vision model, drives to them with closed-loop wheel odometry, and collects them —
-spanning mechanical CAD, embedded firmware, motion control, and a full computer-vision
-pipeline built and integrated by one person.**
+vision model, drives to them with closed-loop wheel odometry, and collects them.
+Spans mechanical CAD, embedded firmware, motion control, and a full computer-vision
+pipeline.**
 
 This repository is the complete engineering record of that system: the SolidWorks
 parts, the Arduino motor and sensor firmware, a ROS 2 control stack, a custom-trained
