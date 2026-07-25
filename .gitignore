@@ -36,6 +36,12 @@ log/
 # Local backups created by the GUI migration / Wipe Data steps
 backups/
 
+# Raw video clips are large and eat Git LFS quota — keep them local, off GitHub.
+# (This only stops NEW clips from being committed; clips already tracked must be
+# removed with `git rm --cached` to leave the remote.)
+*.mov
+*.MOV
+
 # Raspberry Pi / camera captures and generated media
 # NOTE: pi_videos/ is intentionally NOT ignored — recordings made on the Pi are
 # LFS-tracked (see .gitattributes) so they can be pushed to GitHub and pulled onto
