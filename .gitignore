@@ -43,9 +43,10 @@ backups/
 *.MOV
 
 # Raspberry Pi / camera captures and generated media
-# NOTE: pi_videos/ is intentionally NOT ignored — recordings made on the Pi are
-# LFS-tracked (see .gitattributes) so they can be pushed to GitHub and pulled onto
-# the training computer.
+# pi_videos/ is kept OUT of git — videos are too big for GitHub's free LFS budget.
+# Transfer Pi recordings to the training computer directly over the LAN instead:
+#   scripts/pull_pi_videos.sh   (rsync from the Pi, no GitHub involved)
+pi_videos/
 captures/
 recordings/
 *.h264
