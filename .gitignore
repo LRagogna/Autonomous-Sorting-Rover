@@ -31,8 +31,22 @@ docs/context.md
 # Logs and runtime output
 *.log
 logs/
+log/
+
+# Local backups created by the GUI migration / Wipe Data steps
+backups/
+
+# Raw video clips are large and eat Git LFS quota — keep them local, off GitHub.
+# (This only stops NEW clips from being committed; clips already tracked must be
+# removed with `git rm --cached` to leave the remote.)
+*.mov
+*.MOV
 
 # Raspberry Pi / camera captures and generated media
+# pi_videos/ is kept OUT of git — videos are too big for GitHub's free LFS budget.
+# Transfer Pi recordings to the training computer directly over the LAN instead:
+#   scripts/pull_pi_videos.sh   (rsync from the Pi, no GitHub involved)
+pi_videos/
 captures/
 recordings/
 *.h264

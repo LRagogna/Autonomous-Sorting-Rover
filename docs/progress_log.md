@@ -83,21 +83,20 @@ This log tracks major project decisions, hardware milestones, software work, and
 ### Dataset Workflow
 
 - Created the `data/` dataset structure:
-  - `data/raw/videos/` for original recorded object videos.
+  - `data/raw/clips/` for original recorded object videos.
   - `data/raw/photos/` for extracted raw image frames.
-  - `data/processed/` for future cleaned or model-ready data.
-  - `data/labels/` for future labels, annotations, or class maps.
+  - `data/labels/` for generated YOLO images, labels, dataset config, and review images.
 - Added `data/extract_video_frames.py`.
 - Designed the extractor so a video like:
 
 ```text
-data/raw/videos/washer/pan_01.mp4
+data/raw/clips/washer/pan_01.mp4
 ```
 
 creates frames under:
 
 ```text
-data/raw/photos/washer/pan_01.mp4/
+data/raw/photos/washer/pan_01__frame_000000.jpg
 ```
 
 - Added single-video extraction:
@@ -106,8 +105,7 @@ data/raw/photos/washer/pan_01.mp4/
 python data/extract_video_frames.py washer pan_01.mp4 --frame-step 15
 ```
 
-- Added `--all` mode to process every video under `data/raw/videos/`.
-- Added skip behavior so `--all` does not reprocess videos that already have extracted photos.
+- Added batch mode to process every video under `data/raw/clips/`.
 - Chose `--frame-step 15` as a good starting point for short 3-5 second panning videos.
 
 ### GitHub And Raspberry Pi Data Strategy
@@ -140,7 +138,7 @@ git pull
 ### ML Training Images
 
 - Uploaded object images and videos for machine learning training data.
-- Added more source media under `data/raw/videos/` so the object classifier can eventually learn from multiple object categories and camera angles.
+- Added more source media under `data/raw/clips/` so the object detector can learn from multiple object categories and camera angles.
 - Continued building the dataset needed for the rover's vision system.
 
 ## June 29, 2026
@@ -185,7 +183,7 @@ git pull
 
 ### New Three-Step Detection Pipeline
 
-- `data/auto_label_frames.py`: reads `data/labels/object_classes.txt` and automatically draws a bounding box around the object in every extracted frame using OpenCV GrabCut (with a brightness/darkness fallback for the darker bit). It writes a YOLO dataset to `data/processed/detection/` (images, labels, `dataset.yaml`) plus a `review/` folder of annotated previews for human spot-checking. Train/val is split by video clip so near-identical frames do not cross the split.
+- `data/auto_label_frames.py`: reads `data/labels/object_classes.txt` and automatically draws a bounding box around the object in every extracted frame using OpenCV GrabCut (with a brightness/darkness fallback for the darker bit). It writes a YOLO dataset to `data/labels/` (images, labels, `dataset.yaml`) plus per-object `review/` folders of annotated previews for human spot-checking. Train/val is split by video clip so near-identical frames do not cross the split.
 - `ml/train_yolo.py`: fine-tunes `yolov8n.pt` on the dataset and saves the result to `models/yolo_detector.pt`.
 - `src/desktop_yolo_detector.py` + `scripts/run_desktop_detector.sh`: live webcam detector that draws a green box, label, and confidence around each detected object. This is the on-computer "simulator" for the rover's eyes.
 
@@ -206,26 +204,80 @@ git pull
 - Trained the first detector (40 epochs, Apple MPS): mAP50 ~0.85, and 12/12 held-out images boxed correctly.
 - Live webcam test showed missed and flickering boxes. Root cause: the training data only shows the object alone on the dark mat, so the model does not generalize to a hand-held object or busy/colored backgrounds (domain gap).
 - Quick tuning fix in `src/desktop_yolo_detector.py`: lowered default `--conf` to 0.25 and added box smoothing (`--smooth-frames`, default 6) so a box persists briefly after being lost instead of flickering.
-- Durable fix: added a hand-labeled data path for the hard scenes the auto-labeler cannot handle.
-  - New folder `data/hand_labeled/` with `classes.txt` and a step-by-step `README.md` (capture with the webcam, box with LabelImg in YOLO format, rebuild, retrain).
-  - `data/auto_label_frames.py` now also folds in any hand-labeled image+`.txt` pairs from `data/hand_labeled/`, remapping class ids by NAME using each folder's LabelImg `classes.txt` so ordering never matters. Hand-labeled files are tagged `hand__` in the dataset.
-  - Captured hand-held images go to `data/hand_labeled/` (via `capture_webcam_training_images.py --output-dir data/hand_labeled`), kept out of `data/raw/photos/` so the auto-labeler never tries to auto-box them.
-- Updated `README.md` with a "Make It Work On Hands And Different Backgrounds" section and `.gitattributes` to keep the hand-labeled text files readable (not LFS).
-
-### Internet Wrench Data And Scale (Distance) Robustness
-
-- Symptom: the detector recognized the wrench up close but poorly when it was far away (small in the frame).
-- Added `data/fetch_wrench_internet.py`: downloads real, already-boxed wrench pictures from Google Open Images (the "Wrench" class) via `fiftyone`, at many distances/backgrounds. Saves them into `data/hand_labeled/wrench_openimages/` so the builder folds them in automatically. Wrench only — the bit is too unusual to find online, so it stays trained on our own photos.
-- Open Images "Wrench" is a niche class: the train split yielded 62 images / 204 boxes. Dataset went to 385 wrench train boxes (mat + internet), with 62 internet images split into train/val (making val a harder, more honest benchmark).
+- Current data rule: use only videos captured for this project. To improve robustness, record more short clips of the objects under the actual distances, lighting, angles, hands, and backgrounds the rover should handle.
 - `ml/train_yolo.py`: added a `--scale` option (default 0.8) so training randomly zooms pictures in/out, teaching the model to see each object at many sizes (helps far-away/small detection).
-- Retrained (40 epochs, MPS): wrench mAP50 0.74 / precision 0.94, bit mAP50 0.73. Raw mAP is not comparable to the earlier 0.85 because the val set is now much harder (internet images with piles of tiny wrenches).
-- Verified with a synthetic "far away" test (a wrench shrunk to 35%, 22%, and 14% of the frame): all three were detected, confirming the distance/scale problem is fixed.
-- Documented the workflow in `README.md` ("Add Internet Wrench Pictures") and noted `fiftyone` as an optional dependency in `requirements.txt`.
+- Rebuilding the dataset now means: add captured clips, run `./scripts/split_frames.sh`, run `./scripts/process.sh`, then train with `./scripts/train.sh`.
 
 ### One-Command Retraining
 
-- Added `scripts/retrain.sh`: a single command that (1) slices any new videos in `data/raw/videos` into photos (skipping already-sliced ones), (2) rebuilds the dataset from all source folders (`data/raw/photos` + `data/hand_labeled`), and (3) trains the detector — so adding more data is just "drop files in → run one script → test." Frames-per-video is controllable with `FRAME_STEP`.
-- It uses the Apple GPU by default (`DEVICE=cpu ./scripts/retrain.sh` forces CPU) and passes extra options straight through (for example `./scripts/retrain.sh --epochs 60 --scale 0.9`).
-- Clarified the mental model for the user: the builder always rebuilds the dataset from every source folder, and `ml/train_yolo.py` always retrains from the pretrained base on the whole combined dataset, so new data is automatically learned together with old data (no manual merging, no forgetting).
-- Advised on data quantity: roughly 150-250 varied, in-domain (webcam) labeled images per object, prioritizing the bit, with variety (hands, several backgrounds, near/far, angles, lighting) mattering more than raw count.
-- Updated `README.md` with a "Retrain In One Command" section and added `scripts/retrain.sh` to the repository layout.
+- Replaced the combined retraining command with three explicit steps:
+  - `scripts/split_frames.sh`: slices `data/raw/clips/<object>/` videos into JPGs under `data/raw/photos/<object>/`.
+  - `scripts/process.sh`: auto-labels captured frames and writes the YOLO dataset under `data/labels/<object>/`.
+  - `scripts/train.sh`: trains YOLO from `data/labels/dataset.yaml`.
+- Clarified the mental model for the user: the builder always rebuilds the dataset from captured frame folders, and `ml/train_yolo.py` always retrains from the pretrained base on the whole current dataset, so new captures are learned together with old captures.
+- Advised on data quantity: roughly 150-250 varied, in-domain images per object, prioritizing the bit, with variety (hands, several backgrounds, near/far, angles, lighting) mattering more than raw count.
+
+## July 5, 2026
+
+### Physical Rover Design
+
+- Created SolidWorks parts for mounting the electronics and camera on the rover.
+- Designed a Raspberry Pi holder so the Pi has a planned physical location instead of being loose on the rover body.
+- Designed a camera-position holder so the vision system can be mounted at a more controlled angle and height.
+- Added the current rover CAD files to the project so the mechanical design can evolve alongside the electronics, code, and vision work.
+
+### Training And Validation GUI
+
+- Built a local workflow GUI to make the machine-learning loop easier to run and check.
+- The GUI gives one place to split captured videos into frames, process/auto-label the frames, train the YOLO detector, and review the generated examples.
+- Added a job log so long-running tasks like processing and training can be watched without guessing whether they are still running.
+- Added review controls so rejected or questionable examples can be separated from the training set instead of quietly hurting model quality.
+- Updated the training scripts to work smoothly with this GUI-driven workflow.
+
+### Dataset Review Progress
+
+- Continued cleaning the `bit` and `wrench` training data by moving questionable frames out of the train/val folders and into excluded review areas.
+- Removed bad bit examples from the dataset so the detector is trained on cleaner object views.
+- Cleaned up old review preview images after they had served their purpose, including the remaining `bit` review previews in the current working tree.
+- Re-ran YOLO training outputs after the dataset and workflow cleanup so the detector reflects the cleaner training process.
+
+## Week Of July 13, 2026
+
+### GUI Workflow And Data Collection
+
+- Spent most of the past week improving the training GUI workflow so the whole machine-learning loop is easier and faster to run from one place.
+- Continued collecting data for the ML training by recording and adding more object clips, growing the dataset the detector learns from.
+
+## July 20, 2026
+
+### Wheel Distance Sensing Goal
+
+- Set a new goal for the mobility system: make the rover drive a real, measured distance instead of just moving for a guessed amount of time. The target behavior is that a command like `forward 1 ft` actually travels one foot.
+- Chose to measure distance with a wheel odometer built from a TCRT5000 infrared reflectance sensor. Strips of white tape are placed on the black rover wheel, and the sensor "sees" each white strip pass by as the wheel spins.
+- Each white strip that passes counts as one "pulse." Counting pulses tells the rover how far the wheel has rolled, which is how far the rover has driven.
+
+### IR Sensor Test Sketch
+
+- Added `tests/ir_wheel_tape_pulse_test/ir_wheel_tape_pulse_test.ino`, a standalone Arduino test that drives the car forward a requested distance using tape pulses.
+- Reused the same motor wiring as the working `src/serial_drive_turns.ino` (Elegoo Smart Robot Car V4.0), so the motor-driving part was already proven.
+- Wired the TCRT5000 sensor to 5V, ground, and digital pin D10, and noted the module's trim potentiometer must be adjusted so the signal flips cleanly between white tape and black wheel.
+- Added serial commands (`forward 1 ft`, `forward 36 in`, `f 120`, `stop`) at 9600 baud, plus a live telemetry line that prints the raw sensor value, whether it currently sees white, the pulse count, distance, speed, and RPM for debugging.
+
+### Distance Math
+
+- Measured the wheel at 2.6 inches across and placed 2 tape marks per revolution.
+- Worked out that each pulse is about 4.084 inches of travel (wheel circumference divided by 2 marks).
+- A `forward 1 ft` command therefore needs about 3 pulses (12 inches divided by 4.084).
+
+### Tuning Problems Found And Fixed
+
+- The car moved far too slowly at first. The drive speed was set low enough that the wheels nearly stalled, so raised the motor power (PWM) from 150 to 200.
+- The sensor was counting short flashes of light (reflections and glints) as if they were real tape marks, which made the car stop after barely moving. Added a filter that only counts a pulse when the sensor sees white continuously for at least 15 milliseconds, since real tape gives a long steady signal and stray blips are brief.
+- Sorted out a false alarm about the wheels spinning in opposite directions; the forward wiring was correct and matches the turns sketch.
+
+### Decision: Trust The Tape, Not A Timer
+
+- An earlier version also had a backup timer that could stop the car after a calculated amount of time. This timer was firing too early and cutting the drive short before the real tape pulses were counted.
+- Decided distance should be measured purely by the white-tape pulses and removed the timer entirely, so the car drives until it has counted enough real pulses.
+- Tradeoff accepted: if the sensor ever reads nothing, the car keeps driving until a `stop` command is sent, so the plan is to confirm on each run that the pulse count climbs as the wheel turns.
+- Next step is a real-floor test of `forward 1 ft` to confirm the pulse count reaches 3 cleanly, then adjust the white-signal filter if any real pulses are missed.

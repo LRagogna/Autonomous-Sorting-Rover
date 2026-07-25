@@ -1,44 +1,22 @@
-"""Teach a YOLO model to find the rover's objects (wrench, bit, ...).
+"""Train a YOLO object detector and save it as a new versioned model.
 
-HOW TO USE THIS FILE
+The dataset is built by the Process Dataset step:
 
-1. First build the dataset (this makes the boxes for every photo):
+    data/yolo_dataset/dataset.yaml
 
-       python data/auto_label_frames.py --overwrite
+Each training run saves its best weights as the NEXT version:
 
-2. Then train the detector:
+    models/yolo_detector_v1.pt, v2, v3, ...
 
-       python ml/train_yolo.py
+so a new run never overwrites a previous good model. The active model (the one
+the detector and rover use) is a separate copy, models/active_model.pt, and is
+only replaced when you explicitly mark a version active (or for the very first
+model, when there is nothing to protect).
 
-   The first run downloads a tiny starter model called "yolov8n.pt" (~6 MB),
-   so you need internet the first time.
+USAGE
 
-WHAT THIS FILE DOES
-
-- YOLO is a model that looks at a whole picture and draws boxes around the
-  objects it recognizes. It is different from the old classifier, which only
-  guessed one label for a cropped square.
-- We start from "yolov8n.pt" (n = nano = the smallest, fastest YOLO). It already
-  knows how to see edges and shapes, so it learns our specific objects quickly.
-- Training shows the model our pictures many times (each pass is one "epoch")
-  until it can place boxes on wrenches and bits by itself.
-- "nano" plus a small dataset trains in a few minutes on a normal laptop CPU.
-
-WHERE THE RESULT GOES
-
-The best trained weights are copied to:
-
-    models/yolo_detector.pt
-
-That single file is what the live webcam detector loads:
-
-    python src/desktop_yolo_detector.py
-
-USEFUL OPTIONS
-
-    python ml/train_yolo.py --epochs 60      # train longer for better boxes
-    python ml/train_yolo.py --imgsz 512      # smaller pictures = faster, rougher
-    python ml/train_yolo.py --device cpu     # force CPU (this is the default)
+    python ml/train_yolo.py --epochs 50 --device cpu
+    python ml/train_yolo.py --epochs 10 --set-active      # also make it active
 """
 
 from __future__ import annotations
@@ -46,106 +24,124 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
+import time
 from pathlib import Path
 
-
-# This file lives in ml/, so parents[1] is the project folder above ml/.
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-# The dataset that data/auto_label_frames.py created.
-DATASET_YAML = PROJECT_ROOT / "data" / "processed" / "detection" / "dataset.yaml"
-
-# Where we save training runs, and the final easy-to-find weights file.
-RUNS_DIR = PROJECT_ROOT / "models" / "yolo_runs"
-FINAL_WEIGHTS = PROJECT_ROOT / "models" / "yolo_detector.pt"
-
-# The small pretrained starter model we fine-tune from.
-BASE_MODEL = "yolov8n.pt"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from ml import dataset_utils as du  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train a YOLO object detector.")
-    parser.add_argument(
-        "--epochs", type=int, default=40,
-        help="How many times to show the model the whole dataset.",
-    )
-    parser.add_argument(
-        "--imgsz", type=int, default=640,
-        help="Picture size the model trains on. Bigger is slower but sharper.",
-    )
-    parser.add_argument(
-        "--device", default="cpu",
-        help="Where to train: 'cpu', or a GPU id like '0' if you have one.",
-    )
-    parser.add_argument(
-        "--batch", type=int, default=8,
-        help="How many pictures to study at once. Lower this if you run out of memory.",
-    )
-    parser.add_argument(
-        "--scale", type=float, default=0.8,
-        help="How much to randomly zoom pictures in and out during training "
-             "(0-1). Higher makes the model see the object at more sizes, which "
-             "helps it recognize objects that are far away (small). Default 0.8.",
-    )
+    parser = argparse.ArgumentParser(description="Train a versioned YOLO object detector.")
+    parser.add_argument("--epochs", type=int, default=50, help="Times to show the model the dataset.")
+    parser.add_argument("--imgsz", type=int, default=640, help="Training picture size.")
+    parser.add_argument("--device", default="cpu", help="'cpu', 'mps', or a GPU id like '0'.")
+    parser.add_argument("--batch", type=int, default=8, help="Pictures studied at once.")
+    parser.add_argument("--scale", type=float, default=0.8, help="Random zoom augmentation (0-1).")
+    parser.add_argument("--base-model", default="yolov8n.pt", help="Pretrained starter model.")
+    parser.add_argument("--set-active", action="store_true",
+                        help="Also copy the new model to models/active_model.pt.")
     return parser.parse_args()
 
 
-def main() -> None:
+def read_final_metrics(run_dir: Path) -> dict:
+    """Read precision / recall / mAP from a run's results.csv last row."""
+    csv_path = run_dir / "results.csv"
+    metrics: dict[str, float] = {}
+    if not csv_path.exists():
+        return metrics
+    lines = [line for line in csv_path.read_text().splitlines() if line.strip()]
+    if len(lines) < 2:
+        return metrics
+    headers = [h.strip() for h in lines[0].split(",")]
+    values = [v.strip() for v in lines[-1].split(",")]
+    row = dict(zip(headers, values))
+    wanted = {
+        "precision": "metrics/precision(B)",
+        "recall": "metrics/recall(B)",
+        "map50": "metrics/mAP50(B)",
+        "map50_95": "metrics/mAP50-95(B)",
+    }
+    for key, column in wanted.items():
+        if column in row:
+            try:
+                metrics[key] = round(float(row[column]), 4)
+            except ValueError:
+                pass
+    return metrics
+
+
+def main() -> int:
     args = parse_args()
 
-    if not DATASET_YAML.exists():
-        sys.exit(
-            f"Dataset not found: {DATASET_YAML}\n"
-            "Build it first with:\n"
-            "    python data/auto_label_frames.py --overwrite"
-        )
+    if not du.DATASET_YAML.exists():
+        print(f"Dataset not found: {du.DATASET_YAML}\nBuild it first in Process Dataset.",
+              file=sys.stderr)
+        return 1
 
-    # Import here so the friendly error messages above can show even if
-    # ultralytics is not installed yet.
     try:
         from ultralytics import YOLO
     except ImportError:
-        sys.exit(
-            "The 'ultralytics' package is not installed.\n"
-            "Install the training tools with:\n"
-            "    pip install -r requirements.txt"
-        )
+        print("The 'ultralytics' package is not installed. Run: pip install -r requirements.txt",
+              file=sys.stderr)
+        return 1
 
-    print(f"Starting from the small pretrained model: {BASE_MODEL}")
-    model = YOLO(BASE_MODEL)
+    print(f"Starting from pretrained model: {args.base_model}")
+    model = YOLO(args.base_model)
 
-    # This is the actual training. Ultralytics saves everything under RUNS_DIR.
-    # 'scale' controls random zoom so the model learns the object at many sizes
-    # (important for spotting a far-away, small object).
     results = model.train(
-        data=str(DATASET_YAML),
+        data=str(du.DATASET_YAML),
         epochs=args.epochs,
         imgsz=args.imgsz,
         device=args.device,
         batch=args.batch,
         scale=args.scale,
-        project=str(RUNS_DIR),
+        project=str(du.RUNS_DIR),
         name="detector",
         exist_ok=True,
     )
 
-    # After training, ultralytics leaves the best weights at
-    # <save_dir>/weights/best.pt. We copy that to one predictable spot.
-    best_weights = Path(results.save_dir) / "weights" / "best.pt"
+    run_dir = Path(results.save_dir)
+    best_weights = run_dir / "weights" / "best.pt"
     if not best_weights.exists():
-        sys.exit(
-            f"Training finished but best weights were not found at {best_weights}."
-        )
+        print(f"Training finished but best weights were not found at {best_weights}.",
+              file=sys.stderr)
+        return 1
 
-    FINAL_WEIGHTS.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(best_weights, FINAL_WEIGHTS)
+    version, target = du.next_model_version()
+    du.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(str(best_weights), str(target))
+
+    metrics = read_final_metrics(run_dir)
+    du.register_model(target.name, {
+        "version": version,
+        "created": time.time(),
+        "epochs": args.epochs,
+        "imgsz": args.imgsz,
+        "batch": args.batch,
+        "base_model": args.base_model,
+        "device": args.device,
+        "run_dir": du.repo_relative(run_dir),
+        "metrics": metrics,
+    })
+
+    # Set active on request, or automatically for the very first model (nothing
+    # to protect yet).
+    made_active = False
+    if args.set_active or du.active_model_path() is None:
+        du.set_active_model(target.name)
+        made_active = True
 
     print("\nTraining done.")
-    print(f"  detailed run:   {results.save_dir}")
-    print(f"  ready-to-use:   {FINAL_WEIGHTS}")
-    print("\nNow point your webcam at an object:")
-    print("    ./scripts/run_desktop_detector.sh")
+    print(f"  saved version:  {target.name}")
+    print(f"  detailed run:   {run_dir}")
+    if metrics:
+        print(f"  precision {metrics.get('precision', '?')}  recall {metrics.get('recall', '?')}"
+              f"  mAP50 {metrics.get('map50', '?')}  mAP50-95 {metrics.get('map50_95', '?')}")
+    print(f"  active model:   {'updated to this version' if made_active else 'unchanged'}")
+    print(f"TRAIN_RESULT version={version} file={target.name} active={made_active}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

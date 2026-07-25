@@ -1,13 +1,10 @@
 data/** filter=lfs diff=lfs merge=lfs -text
 data/*.py -filter -diff -merge text
 data/**/.gitkeep -filter -diff -merge text
-# YOLO label files and the dataset config are tiny text; keep them readable on
-# GitHub instead of storing them in Git LFS.
-data/processed/detection/labels/**/*.txt -filter -diff -merge text
-data/processed/detection/dataset.yaml -filter -diff -merge text
-# Hand-labeled box files, class lists, and notes are tiny text too.
-data/hand_labeled/**/*.txt -filter -diff -merge text
-data/hand_labeled/**/*.md -filter -diff -merge text
+data/labels/**/*.txt -filter -diff -merge text
+data/labels/**/*.yaml -filter -diff -merge text
+data/raw/photos/.processed_clips.json -filter -diff -merge text
+data/raw/photos/.deleted_frames.json -filter -diff -merge text
 requirements.txt filter=lfs diff=lfs merge=lfs -text
 solidworks/** filter=lfs diff=lfs merge=lfs -text
 tests/** filter=lfs diff=lfs merge=lfs -text

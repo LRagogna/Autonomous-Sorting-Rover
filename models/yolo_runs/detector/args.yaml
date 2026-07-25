@@ -1,8 +1,8 @@
 task: detect
 mode: train
 model: yolov8n.pt
-data: /Users/leonardoragogna/Desktop/AutonomousRover/data/processed/detection/dataset.yaml
-epochs: 40
+data: /Users/leonardoragogna/Desktop/AutonomousRover/data/yolo_dataset/dataset.yaml
+epochs: 10
 time: null
 patience: 100
 batch: 8
@@ -10,7 +10,7 @@ imgsz: 640
 save: true
 save_period: -1
 cache: false
-device: mps
+device: cpu
 workers: 8
 project: /Users/leonardoragogna/Desktop/AutonomousRover/models/yolo_runs
 name: detector

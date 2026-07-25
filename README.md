@@ -1,426 +1,248 @@
-ds# Autonomous-Sorting-Rover
+# Autonomous Sorting Rover
 
-Autonomous robotic rover that detects, collects, and sorts user-prompted items.
+**A ground-up autonomous robot that finds real-world objects with a custom-trained
+vision model, drives to them with closed-loop wheel odometry, and collects them —
+spanning mechanical CAD, embedded firmware, motion control, and a full computer-vision
+pipeline built and integrated by one person.**
 
-## Overview
+This repository is the complete engineering record of that system: the SolidWorks
+parts, the Arduino motor and sensor firmware, a ROS 2 control stack, a custom-trained
+YOLO object detector, and a browser-based MLOps platform that runs the entire
+data-to-deployment loop.
 
-This project is an early-stage autonomous sorting rover. The rover is being designed around a tank-style chassis, Raspberry Pi based control, camera-driven object recognition, and an electromagnet for collecting metal debris.
+---
 
-The current proof of concept focuses on computer vision. There are two vision pieces:
+## What this project demonstrates
 
-1. A simple color test that draws boxes around green objects (`tests/rectangle_detect.py`).
-2. A **YOLO object detector** that learns your real objects (a wrench, a bit, and any objects you add later) and draws a **green box** around them in a live camera feed.
+| Domain | In this repo |
+| --- | --- |
+| **Mechanical design (CAD)** | Custom SolidWorks parts — Pi enclosure with cooling clearance, an angled camera mount, a chassis bridge, and a collection funnel — modeled parametrically and exported to STL/STEP for 3D printing. |
+| **Embedded / electrical** | Arduino firmware driving a dual-motor H-bridge over PWM; a non-blocking, timer-based motion controller with empirically calibrated in-place turns; a relay-driven electromagnet end-effector; Raspberry Pi ↔ Arduino serial link. |
+| **Sensing & controls** | Closed-loop **wheel odometry** from a TCRT5000 IR encoder with real signal-conditioning (debounce, held-signal validation, pulse-gap rejection); differential-drive kinematics; a native **ROS 2 Humble** control stack. |
+| **Computer vision / ML** | A YOLOv8 detector trained on self-recorded data (4 classes, **mAP@0.5 ≈ 0.99**, mAP@[.5:.95] ≈ 0.78 on a held-out split), with a human-in-the-loop labeling and retraining workflow. |
+| **Software / MLOps** | An 8-stage **Training Control Center** (browser app, Python-stdlib server) that owns upload → auto-label → review → versioned training → live test → hard-negative retraining → deploy, with a model registry and leakage-safe dataset splitting. |
+| **Systems integration** | Four subsystems — perception, mobility, manipulation, and control — designed to compose on real hardware through clean, swappable interfaces. |
 
-## Current Hardware Direction
+---
 
-- Raspberry Pi 4 for main control and decision making
-- OV5647 Raspberry Pi camera for visual detection
-- Tank-style drive layout with each side moving together
-- Relay-controlled electromagnet for metal object pickup
+## System architecture
 
-## Repository Layout
+```mermaid
+flowchart LR
+    subgraph Perception
+        CAM[OV5647 camera] --> YOLO[YOLOv8 detector<br/>active_model.pt]
+    end
+    subgraph Control["Control / decision (Raspberry Pi 4)"]
+        YOLO --> BRAIN[Rover logic<br/>search / approach / pickup]
+        BRAIN --> ROS[ROS 2 · differential-drive kinematics]
+    end
+    subgraph Mobility
+        ROS -->|"left,right PWM over serial"| ARD[Arduino motor controller]
+        ARD --> MOT[Tank-drive motors]
+        ENC[IR wheel encoder] -->|distance pulses| ARD
+    end
+    subgraph Manipulation
+        BRAIN --> EM[Relay-driven electromagnet]
+    end
+```
+
+The seams between subsystems are deliberate: perception publishes detections,
+control converts intent to a body-frame velocity, and the drive layer turns that
+velocity into motor commands. Each boundary is a single, well-defined interface, so
+any one subsystem can be swapped or simulated without touching the others.
+
+---
+
+## Subsystem deep-dives
+
+### 1 · Mechanical design — SolidWorks (`solidworks/`)
+
+Every custom bracket on the rover is designed in SolidWorks rather than improvised,
+so the mechanical layout evolves in lockstep with the electronics:
+
+- **`pi_holder.SLDPRT`** — a fixed Raspberry Pi 4 mount with clearance for a cooling
+  setup, giving the controller a defined home on the chassis instead of sitting loose.
+- **`15degrees.SLDPRT`** — an angled camera mount that fixes the OV5647 at a controlled
+  height and downward tilt, so the detector always sees the ground plane from a known
+  viewpoint.
+- **`bridge.SLDPRT`** — a structural bridge tying mounting points across the chassis.
+- **`funnel.STL`** — a collection funnel for guiding picked-up objects.
+
+Parts are authored natively and exported to neutral **STL/STEP** for printing and
+sharing, keeping the design reproducible. The current revisions are **being
+3D-printed and fitted to the chassis** as the mechanical design is iterated.
+
+### 2 · Electronics & embedded firmware (`src/serial_drive_turns.ino`)
+
+The Arduino runs a **non-blocking** motion controller — no `delay()` anywhere in the
+control loop, so serial input is always responsive and a turn can be aborted mid-motion:
+
+- Drives a dual H-bridge (`PWMA/PWMB` + direction pins + standby) with separate cruise
+  and turn PWM levels, chosen so the wheels *scrub* cleanly instead of stalling.
+- **In-place turns from a single calibration constant:** one measured "milliseconds per
+  90°" value scales to any commanded angle (`right,45` / `left,90`), a pragmatic
+  open-loop heading primitive that's honest about its one tunable number.
+- Timer-based turn completion (`millis()` deadlines) instead of blocking waits.
+- A relay-controlled **electromagnet** end-effector for collecting metal objects,
+  bench-validated with a relay + LED stand-in ahead of final wiring.
+
+The Raspberry Pi issues high-level commands over serial (`src/main.py`), keeping
+low-level timing on the microcontroller and decision-making on the Pi.
+
+### 3 · Wheel odometry — closed-loop distance control (`tests/ir_wheel_tape_pulse_test/`)
+
+To turn "go forward one foot" into a *measured* foot, the rover reads a TCRT5000 IR
+reflectance sensor watching white tape marks on a 2.6″ wheel. The firmware is a small
+exercise in real sensor engineering:
+
+- **Geometry → distance:** `inches_per_pulse = π · diameter / pulses_per_rev`, so the
+  controller drives until it has counted enough pulses for the requested distance —
+  a genuine closed loop on distance, not a timed guess.
+- **Signal conditioning against false counts:** a pulse only registers after the sensor
+  reads white *continuously* for a minimum duration (rejecting glints, seams, and
+  reflections), with an additional minimum pulse-gap guard — debouncing done properly.
+- **Live telemetry:** streams pulse count, revolutions, distance, RPM, and in/s so the
+  behavior is observable and tunable during bring-up.
+- Optional active-braking pulse to cancel coast at the target.
+
+> 🎥 **Wheel-odometry bring-up demo:** [`docs/images/2026-07-20/IMG_2432.MOV`](docs/images/2026-07-20/IMG_2432.MOV)
+
+### 4 · Motion control & ROS 2 (`ros2_ws/`)
+
+A native **ROS 2 Humble** workspace (installed via RoboStack on Apple Silicon — no
+Docker, VM, or simulator) implements teleoperated differential drive with textbook-clean
+separation of concerns:
+
+- **`differential_drive.py`** — pure `Twist (v, ω) → (left, right)` kinematics with
+  **zero ROS or hardware dependencies**, normalized and clamped to the motor range. Being
+  dependency-free is what makes it reusable and unit-testable.
+- **`keyboard_node`** publishes `geometry_msgs/Twist` on `/cmd_vel`; **`fake_motor_node`**
+  subscribes and prints motor values. `/cmd_vel` is the *single* integration point, so a
+  real `arduino_bridge_node` drops in — reusing the same kinematics — without changing the
+  teleop or the message contract.
+- Chassis geometry (wheel base, max speeds, output scale) is exposed as **ROS parameters**,
+  so a different robot needs no code change. Nodes are cross-platform (`termios`/`msvcrt`).
+
+### 5 · Perception — custom YOLO detector
+
+The detector is trained entirely on the rover's own recordings, not a stock dataset:
+
+- **YOLOv8**, fine-tuned to four classes (**bit, wrench, jenga, screwdriver**) from ~712
+  self-recorded, human-reviewed images across multiple versioned models.
+- Latest model: **mAP@0.5 ≈ 0.99**, **mAP@[.5:.95] ≈ 0.78** on a held-out validation split.
+- Runs live on a webcam or the Pi camera, drawing labeled boxes with confidence, with
+  temporal box-smoothing to steady detections (`src/desktop_yolo_detector.py`).
+- **Negative/background images** are first-class training data to suppress false positives
+  on empty scenes — the model is explicitly taught what "nothing" looks like.
+
+### 6 · The Training Control Center — an end-to-end ML platform (`gui/`, `ml/`)
+
+The most substantial piece of software here is a self-built **MLOps platform** that runs
+the whole model lifecycle from a browser, backed only by the Python standard library (no
+web framework) with a modular route/API design and state derived live from the filesystem:
+
+1. **Upload Clips** — organize source videos per object class.
+2. **Process Dataset** — extract frames and auto-draw boxes (classical CV: top-hat/black-hat
+   morphology to segment the object), building a YOLO dataset.
+3. **Review / Edit Labels** — pass, fail, or drag-redraw every box with keyboard shortcuts;
+   rejected frames are quarantined but recoverable.
+4. **Train Model** — versioned training with presets; every run saves
+   `models/yolo_detector_vN.pt` and logs precision/recall/mAP to a registry.
+5. **Test Detector** — run any version live and capture mistakes in one click.
+6. **Retraining Queue** — correct captured failures (or mark them background) and fold them
+   back in — a proper **hard-negative mining loop**.
+7. **Deploy** — promote a chosen model into the Pi deploy bundle behind a checklist.
+8. **Danger Zone** — guarded destructive/maintenance actions.
+
+Engineering details that matter: the **train/val split is by whole source video**, never by
+frame, so near-identical frames can't leak across the split and inflate metrics; models are
+**versioned and never overwritten**; and a Raspberry Pi recorder (`src/record_video.py`)
+captures training footage from the deployment camera itself to close the train-vs-deploy
+domain gap.
+
+---
+
+## Current status
+
+- **Physical rover built** — tank-drive chassis, Raspberry Pi 4, OV5647 camera, Arduino
+  motor control over serial, relay + electromagnet bench-proven. The custom SolidWorks
+  mounts are currently being **3D-printed and fitted** as the design is iterated.
+- **Vision working** across 4 classes from self-recorded, human-reviewed data; multiple
+  versioned models tracked with metrics.
+- **Training Control Center** driving the full upload → … → deploy loop.
+- **ROS 2 teleop → kinematics → motor node** running (simulated motor output today; the
+  serial bridge is designed as a drop-in).
+- **Wheel odometry** firmware written and in bring-up — closing the loop on measured
+  distance travel.
+- **Next:** wire the ROS 2 serial bridge to hardware and compose a first end-to-end
+  search → approach → pickup run.
+
+<p align="center">
+  <img src="docs/images/2026-06-15/IMG_1304.jpeg" width="45%" alt="Early proof-of-concept build" />
+  <img src="docs/images/2026-06-29/IMG_1924.jpeg" width="45%" alt="Early proof-of-concept build" />
+  <br/>
+  <em>Early proof-of-concept build — kept for reference. The current design has advanced
+  significantly beyond what's shown here.</em>
+</p>
+
+---
+
+## Repository layout
 
 ```text
-README.md
-requirements.txt
-data/
-  extract_video_frames.py        # turn videos into photos
-  auto_label_frames.py           # turn photos into a YOLO dataset (draws the boxes)
-  capture_webcam_training_images.py
-  labels/
-    object_classes.txt           # the master list of objects: "id name"
-  processed/
-    detection/                   # the YOLO dataset (created by auto_label_frames.py)
-  raw/
-    videos/<object>/<clip>       # original recorded clips
-    photos/<object>/<clip>/      # frames extracted from those clips
-ml/
-  train_yolo.py                  # train the detector
-models/
-  yolo_detector.pt               # the trained detector (created by train_yolo.py)
+solidworks/        # SolidWorks parts + STL/STEP exports (mechanical design)
 src/
-  desktop_yolo_detector.py       # live webcam detector (draws the green boxes)
-scripts/
-  retrain.sh                     # one command: rebuild dataset + retrain
-  run_desktop_detector.sh
-  setup_pi_sparse_checkout.sh
+  serial_drive_turns.ino   # Arduino: non-blocking motor control + calibrated turns
+  main.py                  # Raspberry Pi: drive the rover over Arduino serial
+  desktop_yolo_detector.py # live YOLO detector (webcam / Pi camera)
+  record_video.py          # capture training footage on the Pi camera
 tests/
-  rectangle_detect.py            # Raspberry Pi green-color detection proof of concept
+  ir_wheel_tape_pulse_test/ # Arduino: IR wheel-encoder closed-loop distance control
+  rectangle_detect.py       # early color-segmentation CV proof of concept
+ros2_ws/           # ROS 2 Humble control workspace
+  src/rover_control/        # differential_drive.py, keyboard_node, fake_motor_node
+gui/               # Training Control Center — browser app (stdlib server)
+  app.py  server.py  jobs.py  state.py  api/  web/
+ml/                # dataset + model logic (importable + CLI)
+  extract_frames.py  auto_label_frames.py  process_dataset.py  train_yolo.py  ...
+models/            # versioned detectors + active_model.pt + registry.json
+data/              # raw_videos, frames, yolo_dataset, review/retrain state
 ```
 
-## Retrain In One Command
+---
 
-Whenever you add more training data, rebuild the dataset and retrain with a
-single command:
+## Running it
 
-```bash
-./scripts/retrain.sh
-```
-
-This does everything for you: it **slices any new videos** in `data/raw/videos`
-into photos (already-sliced videos are skipped), **rebuilds the dataset** from all
-your source folders (old and new together), and **trains** the detector into
-`models/yolo_detector.pt`. Pass training options straight through, for example
-`./scripts/retrain.sh --epochs 60 --scale 0.9`, force the CPU with
-`DEVICE=cpu ./scripts/retrain.sh`, or keep more frames per video with
-`FRAME_STEP=10 ./scripts/retrain.sh`.
-
-So if you record a new clip, you can just drop the video file into
-`data/raw/videos/<object>/` and run `./scripts/retrain.sh` — no separate extract
-step needed.
-
-## The Vision Pipeline In Steps
-
-The one command above is just these steps in a row. The detector learns from your
-own photos:
-
-```bash
-# 1. Turn your videos into photos (skip if you already have photos)
-python data/extract_video_frames.py --all --frame-step 15
-
-# 2. Draw a box around the object in every photo and build the YOLO dataset
-python data/auto_label_frames.py --overwrite
-
-# 3. Train the detector
-python ml/train_yolo.py
-```
-
-Then run the live detector on your computer:
-
-```bash
-./scripts/run_desktop_detector.sh
-```
-
-Hold a wrench or a bit in front of your webcam. When the model is confident, a green box with the object's name appears around it. Press `q` to quit.
-
-## Setup Notes
-
-On a development computer, install the desktop/ML Python dependencies with:
+**Training Control Center** (the recommended way to drive the whole ML pipeline):
 
 ```bash
 pip install -r requirements.txt
+python gui/app.py            # opens the browser control center
 ```
 
-Do not run that file on the Raspberry Pi. The Pi runtime dependency file is
-small:
+**Live detector** on your computer's webcam:
 
 ```bash
-pip install -r requirements-pi.txt
+python src/desktop_yolo_detector.py
 ```
 
-On Raspberry Pi OS, install Picamera2 through the system package manager:
+**ROS 2 teleop** (two terminals, after building the workspace — see `ros2_ws/README.md`):
 
 ```bash
-sudo apt install python3-picamera2
+ros2 run rover_control fake_motor_node   # terminal A
+ros2 run rover_control keyboard_node     # terminal B
 ```
 
-## Raspberry Pi Runtime Checkout
+**Raspberry Pi** runs a lean runtime checkout (operational rover code + hardware tests only);
+`src/main.py` sends drive commands to the Arduino over serial.
 
-The Raspberry Pi should be a runtime checkout, not a development or training
-checkout. Today, ML training does **not** run on the Pi: videos, datasets,
-auto-labeling, YOLO training, desktop detector experiments, model run outputs,
-CAD files, and project docs stay on a development machine. The Pi currently
-needs only the control entry point, Arduino sketch, ROS 2 control source, the
-Raspberry Pi hardware tests, and small setup/config files used to operate or
-update those pieces.
+---
 
-Configure the Pi checkout once:
+## Roadmap
 
-```bash
-./scripts/setup_pi_sparse_checkout.sh
-git pull
+1. Wire the ROS 2 `/cmd_vel` serial bridge to the Arduino for closed-loop driving.
+2. Finish IR wheel-odometry integration so distance commands travel true.
+3. Run the detector on-device (Pi, or an Edge-TPU export) for real-time inference.
+4. Define the rover state machine: search → approach → pickup → release.
+5. First integrated autonomous sorting run.
 ```
-
-That script allowlists only:
-
-```text
-.gitattributes
-.gitignore
-README.md
-requirements-pi.txt
-scripts/setup_pi_sparse_checkout.sh
-src/main.py
-src/serial_drive_turns.ino
-tests/
-ros2_ws/README.md
-ros2_ws/rover_env.sh
-ros2_ws/src/
-```
-
-It also tells Git LFS not to fetch `data/`, `docs/`, `solidworks/`, `ml/`,
-`models/`, the computer `requirements.txt`, or the base YOLO weights during
-normal Pi pulls.
-
-## Step 1: Extract Training Photos From Video
-
-Place source videos in object-specific folders under `data/raw/videos/`:
-
-```text
-data/raw/videos/wrench/clip_01.MOV
-data/raw/videos/bit/clip_01.MOV
-```
-
-Then extract frames from every video at once:
-
-```bash
-python data/extract_video_frames.py --all --frame-step 15
-```
-
-At roughly 30 FPS, `--frame-step 15` saves about 2 frames per second. Photos are written to `data/raw/photos/<object>/<clip>/`. Batch mode skips videos that already have photos, so you can add new clips over time and rerun it.
-
-You can also capture photos straight from your webcam:
-
-```bash
-python data/capture_webcam_training_images.py wrench --auto-save --max-images 80
-```
-
-## Step 2: Auto-Label The Photos (Build The YOLO Dataset)
-
-A YOLO detector needs to know **where** the object is in each photo, not just what it is. Because the objects sit on a plain, high-contrast mat, `data/auto_label_frames.py` can find the object and draw the box for you:
-
-```bash
-python data/auto_label_frames.py --overwrite
-```
-
-This reads the class list in `data/labels/object_classes.txt` and writes a ready-to-train dataset to:
-
-```text
-data/processed/detection/
-  dataset.yaml            # class names + folders, for YOLO
-  images/train/           # most photos, used for learning
-  images/val/             # a few photos, used for checking
-  labels/train/           # one box file per training photo
-  labels/val/             # one box file per check photo
-  review/                 # the same photos with the box drawn on, for a human to check
-```
-
-**Always spot-check `data/processed/detection/review/`.** Open a handful of images and confirm the green boxes hug the object. If a class looks wrong, delete those photos or adjust the padding and re-run:
-
-```bash
-python data/auto_label_frames.py --overwrite --pad 0.1
-```
-
-The dataset is split by video clip, so near-identical frames from one clip never end up in both the training and check sets.
-
-## Step 3: Train The Detector
-
-```bash
-python ml/train_yolo.py
-```
-
-This fine-tunes a small pretrained model (`yolov8n.pt`, "nano" = smallest/fastest). On a normal laptop CPU with a small dataset it finishes in a few minutes. The first run downloads the ~6 MB starter model, so you need internet once.
-
-The trained detector is saved to:
-
-```text
-models/yolo_detector.pt
-```
-
-Useful options:
-
-```bash
-python ml/train_yolo.py --epochs 60     # train longer for tighter boxes
-python ml/train_yolo.py --imgsz 512     # smaller pictures = faster, rougher
-python ml/train_yolo.py --batch 4       # lower if you run out of memory
-```
-
-## Step 4: Run The Live Detector On Your Computer
-
-```bash
-./scripts/run_desktop_detector.sh
-```
-
-This opens your computer's default webcam, runs the trained detector on each frame, and draws a green box with the object's name and confidence. Press `q` to quit.
-
-Useful options:
-
-```bash
-./scripts/run_desktop_detector.sh --camera-index 1   # use a second camera
-./scripts/run_desktop_detector.sh --conf 0.15        # show more (shakier) boxes
-./scripts/run_desktop_detector.sh --conf 0.5         # only very confident boxes
-./scripts/run_desktop_detector.sh --smooth-frames 0  # turn off box smoothing
-./scripts/run_desktop_detector.sh --headless         # no window; print detections
-```
-
-The detector lowers shaky boxes with two helpers: a confidence cutoff (`--conf`)
-and box smoothing, which keeps a box on screen for a few frames after it is lost
-so it does not flicker.
-
-On macOS, if OpenCV says camera access was denied, allow your terminal app under:
-
-```text
-System Settings > Privacy & Security > Camera
-```
-
-## Make It Work On Hands And Different Backgrounds
-
-The automatic labeler only works when the object sits alone on a plain
-background, so the trained model is best at that. If the detector struggles when
-you **hold the object in your hand** or use a **busy or colored background**, the
-fix is to add training pictures of those exact situations and box them by hand.
-
-Full step-by-step instructions are in `data/hand_labeled/README.md`. In short:
-
-1. Capture varied webcam pictures (hand-held, different backgrounds, lighting):
-
-   ```bash
-   python data/capture_webcam_training_images.py wrench --output-dir data/hand_labeled --auto-save --max-images 120
-   python data/capture_webcam_training_images.py bit    --output-dir data/hand_labeled --auto-save --max-images 120
-   ```
-
-2. Draw boxes on them with LabelImg (a free desktop app), saving in **YOLO**
-   format:
-
-   ```bash
-   pip install labelImg
-   labelImg
-   ```
-
-3. Rebuild and retrain. The builder automatically folds in every hand-labeled
-   picture alongside the plain-background ones:
-
-   ```bash
-   python data/auto_label_frames.py --overwrite
-   python ml/train_yolo.py
-   ```
-
-Repeat the loop (capture more variety, label, retrain) until it recognizes the
-objects in the conditions you care about.
-
-## Add Internet Wrench Pictures (Better At A Distance)
-
-Our own photos are all close-up, so the detector can be weak on a wrench that is
-far away (small in the frame). Google's free **Open Images** dataset has thousands
-of real wrench pictures at many distances and backgrounds, each already boxed.
-Download a batch (wrench only — the bit is too unusual to find online):
-
-```bash
-pip install fiftyone
-python data/fetch_wrench_internet.py --max-samples 600
-```
-
-This saves boxed wrench pictures into `data/hand_labeled/wrench_openimages/`, so
-they fold into the dataset automatically. Then rebuild and retrain:
-
-```bash
-python data/auto_label_frames.py --overwrite
-python ml/train_yolo.py
-```
-
-Training also randomly zooms pictures in and out (the `--scale` option, default
-0.8) so the model learns each object at many sizes. To push size variety even
-harder:
-
-```bash
-python ml/train_yolo.py --scale 0.9
-```
-
-## How To Add A New Object To Recognize
-
-The pipeline is built to grow. To teach the rover a new object (for example, a washer):
-
-1. Record short videos into `data/raw/videos/washer/`.
-2. Extract photos: `python data/extract_video_frames.py --all --frame-step 15`
-3. Add one line to `data/labels/object_classes.txt`, for example:
-
-   ```text
-   0 bit
-   1 wrench
-   2 washer
-   ```
-
-4. Rebuild the dataset: `python data/auto_label_frames.py --overwrite`
-5. Retrain: `python ml/train_yolo.py`
-
-The new object will now get its own green box in the live detector.
-
-## Color Detection Proof Of Concept
-
-`tests/rectangle_detect.py` is a separate, simpler Raspberry Pi camera test. It captures frames, converts them to HSV color space, thresholds for green pixels, cleans the mask, finds contours, and draws boxes around green objects. It is intended to run on a Raspberry Pi with the camera connected:
-
-```bash
-python tests/rectangle_detect.py
-```
-
-Press `q` to quit.
-
-## Documentation Images
-
-Project documentation pictures go in date-labeled folders under `docs/images/`. Use a filename-safe date format with dashes:
-
-```text
-docs/images/2026-06-19/pi-cooling.jpg
-```
-
-Then reference them from Markdown like:
-
-```markdown
-![Raspberry Pi cooling setup](images/2026-06-19/pi-cooling.jpg)
-```
-
-Images under `docs/images/` are tracked with Git LFS and are excluded from the Raspberry Pi checkout.
-
-## Dataset, CAD, And Documentation Storage
-
-Everything under `data/`, `docs/images/`, and `solidworks/`, plus the computer
-`requirements.txt`, is tracked with Git LFS so datasets, documentation media,
-CAD/export files, and desktop dependency lists can stay out of the Pi runtime
-checkout. Common SolidWorks/CAD extensions (`.sldprt`, `.sldasm`, `.slddrw`,
-`.stl`, `.step`, and `.stp`, including uppercase variants) are also tracked
-with LFS wherever they are added. Small text files (the frame-extractor code,
-`.gitkeep` placeholders, YOLO label `.txt` files, `dataset.yaml`, and
-`requirements-pi.txt`) are kept as normal text so they read normally on GitHub.
-
-On development machines that should download dataset files normally, use:
-
-```bash
-git lfs install
-git pull
-```
-
-On the Raspberry Pi, configure sparse checkout once so only runtime files appear
-in the Pi working tree during normal pulls:
-
-```bash
-./scripts/setup_pi_sparse_checkout.sh
-git pull
-```
-
-If the Raspberry Pi does not have that script yet, run the same setup manually
-before pulling:
-
-```bash
-git lfs install --local --skip-smudge
-git config --local lfs.fetchexclude "data/**,docs/**,solidworks/**,ml/**,models/**,requirements.txt,yolov8n.pt"
-git sparse-checkout init --no-cone
-git sparse-checkout set \
-  "/.gitattributes" \
-  "/.gitignore" \
-  "/README.md" \
-  "/requirements-pi.txt" \
-  "/scripts/setup_pi_sparse_checkout.sh" \
-  "/src/main.py" \
-  "/src/serial_drive_turns.ino" \
-  "/tests/" \
-  "/ros2_ws/README.md" \
-  "/ros2_ws/rover_env.sh" \
-  "/ros2_ws/src/"
-git pull
-```
-
-This keeps the dataset, documentation media, CAD files, ML training workspace,
-model run outputs, and desktop tools visible in the repository while keeping
-the Raspberry Pi checkout focused on operational rover code and hardware tests.
-
-## Development Status
-
-See `docs/progress_log.md` for dated project progress. Current work is focused on validating individual subsystems before integrating rover movement, vision, and object pickup behavior.
-
-Near-term goals:
-
-1. Grow the detection dataset with more objects and lighting conditions.
-2. Tune the YOLO detector for reliable boxes on the rover's real camera.
-3. Run the detector on the Raspberry Pi (or export it for on-device speed).
-4. Build a motor driver proof of concept.
-5. Validate electromagnet activation with final hardware.
-6. Define a simple rover state machine for search, approach, pickup, and release.
