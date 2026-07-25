@@ -69,7 +69,8 @@ so the mechanical layout evolves in lockstep with the electronics:
 - **`funnel.STL`** — a collection funnel for guiding picked-up objects.
 
 Parts are authored natively and exported to neutral **STL/STEP** for printing and
-sharing, keeping the design reproducible.
+sharing, keeping the design reproducible. The current revisions are **being
+3D-printed and fitted to the chassis** as the mechanical design is iterated.
 
 ### 2 · Electronics & embedded firmware (`src/serial_drive_turns.ino`)
 
@@ -103,6 +104,8 @@ exercise in real sensor engineering:
 - **Live telemetry:** streams pulse count, revolutions, distance, RPM, and in/s so the
   behavior is observable and tunable during bring-up.
 - Optional active-braking pulse to cancel coast at the target.
+
+> 🎥 **Wheel-odometry bring-up demo:** [`docs/images/2026-07-20/IMG_2432.MOV`](docs/images/2026-07-20/IMG_2432.MOV)
 
 ### 4 · Motion control & ROS 2 (`ros2_ws/`)
 
@@ -161,9 +164,9 @@ domain gap.
 
 ## Current status
 
-- **Physical rover assembled** — tank-drive chassis, Raspberry Pi 4 in a custom holder,
-  OV5647 on a custom angled mount, Arduino motor control over serial, relay + electromagnet
-  bench-proven.
+- **Physical rover built** — tank-drive chassis, Raspberry Pi 4, OV5647 camera, Arduino
+  motor control over serial, relay + electromagnet bench-proven. The custom SolidWorks
+  mounts are currently being **3D-printed and fitted** as the design is iterated.
 - **Vision working** across 4 classes from self-recorded, human-reviewed data; multiple
   versioned models tracked with metrics.
 - **Training Control Center** driving the full upload → … → deploy loop.
@@ -175,8 +178,11 @@ domain gap.
   search → approach → pickup run.
 
 <p align="center">
-  <img src="docs/images/2026-06-15/IMG_1304.jpeg" width="45%" alt="Rover build" />
-  <img src="docs/images/2026-06-29/IMG_1924.jpeg" width="45%" alt="Rover build" />
+  <img src="docs/images/2026-06-15/IMG_1304.jpeg" width="45%" alt="Early proof-of-concept build" />
+  <img src="docs/images/2026-06-29/IMG_1924.jpeg" width="45%" alt="Early proof-of-concept build" />
+  <br/>
+  <em>Early proof-of-concept build — kept for reference. The current design has advanced
+  significantly beyond what's shown here.</em>
 </p>
 
 ---
