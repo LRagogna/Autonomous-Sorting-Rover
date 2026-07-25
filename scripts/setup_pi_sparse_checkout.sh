@@ -22,6 +22,7 @@ git sparse-checkout set \
   '/requirements-pi.txt' \
   '/scripts/setup_pi_sparse_checkout.sh' \
   '/src/main.py' \
+  '/src/record_video.py' \
   '/src/serial_drive_turns.ino' \
   '/tests/' \
   '/ros2_ws/README.md' \

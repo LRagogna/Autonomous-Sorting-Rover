@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "control-center",
+      "runtimeExecutable": "/Users/leonardoragogna/Desktop/AutonomousRover/.venv/bin/python",
+      "runtimeArgs": ["gui/app.py", "--no-browser", "--port", "8765"],
+      "port": 8765
+    }
+  ]
+}

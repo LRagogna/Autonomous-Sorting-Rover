@@ -19,8 +19,7 @@ def processable_clips(req):
     groups = []
     if du.RAW_VIDEOS_DIR.exists():
         for class_dir in sorted(p for p in du.RAW_VIDEOS_DIR.iterdir()
-                                if p.is_dir() and not p.name.startswith(".")
-                                and not du.is_background_class(p.name)):
+                                if p.is_dir() and not p.name.startswith(".")):
             clips = []
             for video in sorted(p for p in class_dir.iterdir()
                                 if p.is_file() and p.suffix.lower() in du.VIDEO_EXTENSIONS):

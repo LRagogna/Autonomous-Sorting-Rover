@@ -39,6 +39,7 @@ backups/
 # Raspberry Pi / camera captures and generated media
 captures/
 recordings/
+pi_videos/
 *.h264
 
 # OS and editor files

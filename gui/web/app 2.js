@@ -209,7 +209,6 @@
         node.innerHTML = [
           ["extracted", "Frames extracted"], ["labels", "Labels created"],
           ["failed", "Auto-label failures"], ["review", "Need review"],
-          ["backgrounds", "Backgrounds added"],
         ].map(([k, label]) => `<div class="box"><b>${s[k] ?? 0}</b><span>${label}</span></div>`).join("");
       } else if (s.type === "train") {
         node.innerHTML = `<div class="box"><b>${s.file || "?"}</b><span>saved model</span></div>

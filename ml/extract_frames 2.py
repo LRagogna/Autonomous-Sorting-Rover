@@ -46,9 +46,7 @@ def iter_all_videos() -> list[tuple[str, Path]]:
     if not du.RAW_VIDEOS_DIR.exists():
         return videos
     for class_dir in sorted(p for p in du.RAW_VIDEOS_DIR.iterdir() if p.is_dir()):
-        # Skip the reserved background/ folder — its pictures are negatives, not a
-        # class, and are folded in separately (never turned into object frames).
-        if class_dir.name.startswith(".") or du.is_background_class(class_dir.name):
+        if class_dir.name.startswith("."):
             continue
         for video in sorted(p for p in class_dir.iterdir() if p.is_file()):
             if video.name.startswith(".") or video.suffix.lower() not in du.VIDEO_EXTENSIONS:

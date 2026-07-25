@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from ml import auto_label_frames as al  # noqa: E402
 from ml import dataset_utils as du  # noqa: E402
 from ml import extract_frames as ef  # noqa: E402
-from ml import label_utils as lu  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,7 +37,7 @@ def main() -> int:
     args = parse_args()
     du.ensure_core_dirs()
 
-    print("==> Step 1/3: extracting frames from clips")
+    print("==> Step 1/2: extracting frames from clips")
     try:
         videos = ef.resolve_selection(args.select, args.all)
     except ValueError as error:
@@ -57,32 +56,22 @@ def main() -> int:
         print(f"    saved {saved} frame(s)")
         frames_extracted += saved
 
-    print("\n==> Step 2/3: auto-labeling frames and building the dataset")
+    print("\n==> Step 2/2: auto-labeling frames and building the dataset")
     result = al.run(overwrite=False, incremental=True,
                     val_fraction=args.val_fraction, pad=args.pad)
+    if not result.get("ok"):
+        print("Auto-labeling did not complete.", file=sys.stderr)
+        return 1
+
     labels = result.get("labels_created", 0)
     no_box = result.get("no_box", 0)
-    if not result.get("ok"):
-        # Not fatal on its own: there may still be background pictures to fold in
-        # and a dataset built on a previous run. Warn and keep going.
-        print(f"  note: auto-labeling added no new object labels "
-              f"({result.get('reason', 'nothing new')}).", file=sys.stderr)
-
-    print("\n==> Step 3/3: adding background images (negative examples)")
-    background = lu.ingest_background_images(val_fraction=args.val_fraction)
-    bg_added = background.get("added", 0)
-    print(f"  background pictures added: {bg_added} "
-          f"(skipped {background.get('skipped', 0)} already in the dataset)")
-    print(f"  background images in dataset: {background.get('total', 0)}")
-
     print("\n==> Done processing.")
-    print(f"  frames extracted:      {frames_extracted}")
-    print(f"  labels created:        {labels}")
-    print(f"  auto-label failures:   {no_box}")
-    print(f"  frames needing review: {labels}")
-    print(f"  backgrounds added:     {bg_added}")
+    print(f"  frames extracted:     {frames_extracted}")
+    print(f"  labels created:       {labels}")
+    print(f"  auto-label failures:  {no_box}")
+    print(f"  frames needing review:{labels}")
     print(f"PROCESS_SUMMARY extracted={frames_extracted} labels={labels} "
-          f"failed={no_box} review={labels} backgrounds={bg_added}")
+          f"failed={no_box} review={labels}")
     return 0
 
 

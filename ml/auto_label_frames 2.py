@@ -128,8 +128,7 @@ def collect_clip_frames() -> dict[tuple[str, str], list[Path]]:
     if not du.FRAMES_DIR.exists():
         return clips
     for class_dir in sorted(p for p in du.FRAMES_DIR.iterdir() if p.is_dir()):
-        # The reserved background/ folder is never labeled as an object class.
-        if class_dir.name.startswith(".") or du.is_background_class(class_dir.name):
+        if class_dir.name.startswith("."):
             continue
         for frame in sorted(p for p in class_dir.iterdir()
                             if p.is_file() and p.suffix.lower() in du.IMAGE_EXTENSIONS):

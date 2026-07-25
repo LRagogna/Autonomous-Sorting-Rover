@@ -93,13 +93,6 @@ REVIEW_STATES = ("unreviewed", "passed", "failed", "edited")
 # label file and use this filename prefix so they are never mistaken for a class.
 BG_PREFIX = "bg__"
 
-# The user drops PICTURES of empty scenes / plain backgrounds into
-# data/raw_videos/background/. This folder name is RESERVED: it is never an object
-# class, its images are folded into the dataset as negatives (empty labels), and
-# the model must never learn "background" as something to detect.
-BACKGROUND_CLASS = "background"
-RAW_BACKGROUNDS_DIR = RAW_VIDEOS_DIR / BACKGROUND_CLASS
-
 
 # ---------------------------------------------------------------------------
 # Small helpers
@@ -135,11 +128,6 @@ def validate_class_name(name: str) -> str:
         raise ValueError("Choose or enter an object class name.")
     if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
         raise ValueError("Class names can use letters, numbers, _ and - only.")
-    if is_background_class(name):
-        raise ValueError(
-            '"background" is reserved for negative images (data/raw_videos/background/) '
-            "and cannot be an object class."
-        )
     return name
 
 
@@ -186,11 +174,6 @@ def class_from_stem(stem: str) -> str:
 def is_background_stem(stem: str) -> bool:
     """Return True for background/negative dataset images (empty labels)."""
     return stem.startswith(BG_PREFIX)
-
-
-def is_background_class(name: str) -> bool:
-    """Return True for the reserved ``background`` folder (negatives, not a class)."""
-    return (name or "").strip().lower() == BACKGROUND_CLASS
 
 
 def find_source_video(class_name: str, video_stem: str) -> Path | None:
@@ -270,8 +253,7 @@ def list_classes_from_disk() -> list[str]:
     for root in (RAW_VIDEOS_DIR, FRAMES_DIR):
         if root.exists():
             for path in root.iterdir():
-                if (path.is_dir() and not path.name.startswith(".")
-                        and not is_background_class(path.name)):
+                if path.is_dir() and not path.name.startswith("."):
                     names.add(path.name)
     return sorted(names)
 
@@ -341,8 +323,8 @@ def ensure_core_dirs() -> None:
         (DATASET_IMAGES_DIR / split).mkdir(parents=True, exist_ok=True)
         (DATASET_LABELS_DIR / split).mkdir(parents=True, exist_ok=True)
     for path in (
-        RAW_VIDEOS_DIR, RAW_BACKGROUNDS_DIR, FRAMES_DIR, REJECTED_IMAGES_DIR,
-        REJECTED_LABELS_DIR, RETRAIN_IMAGES_DIR, META_DIR, MODELS_DIR,
+        RAW_VIDEOS_DIR, FRAMES_DIR, REJECTED_IMAGES_DIR, REJECTED_LABELS_DIR,
+        RETRAIN_IMAGES_DIR, META_DIR, MODELS_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
 
@@ -464,17 +446,6 @@ def count_images(directory: Path) -> int:
     return sum(
         1 for p in directory.rglob("*")
         if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
-    )
-
-
-def count_raw_background_images() -> int:
-    """Count the background PICTURES the user has dropped in raw_videos/background/."""
-    if not RAW_BACKGROUNDS_DIR.exists():
-        return 0
-    return sum(
-        1 for p in RAW_BACKGROUNDS_DIR.iterdir()
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
-        and not p.name.startswith(".")
     )
 
 

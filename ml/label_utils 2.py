@@ -318,47 +318,6 @@ def add_background_image(image_bytes: bytes, split: str = "train", tag: str = "b
     return {"stem": stem, "split": split, "image": du.repo_relative(image_path)}
 
 
-def ingest_background_images(val_fraction: float = 0.2) -> dict:
-    """Fold the user's background PICTURES into the dataset as negative examples.
-
-    Reads every picture the user dropped into ``data/raw_videos/background/`` and
-    copies it into the YOLO dataset with an EMPTY label file, so the detector learns
-    what "nothing" looks like and stops boxing empty scenes. Backgrounds are NEVER
-    an object class and never get a box.
-
-    Safe to re-run: each picture maps to a deterministic ``bg__raw_<name>`` stem, so
-    photos already in the dataset are skipped and only newly added ones are folded
-    in. A share of them (``val_fraction``) goes to the validation split so false
-    positives are measured there too.
-    """
-    src_dir = du.RAW_BACKGROUNDS_DIR
-    added, skipped = 0, 0
-    if src_dir.exists():
-        images = sorted(
-            p for p in src_dir.iterdir()
-            if p.is_file() and p.suffix.lower() in du.IMAGE_EXTENSIONS
-            and not p.name.startswith(".")
-        )
-        step = max(2, round(1 / val_fraction)) if val_fraction > 0 else 0
-        placed = 0
-        for image in images:
-            tag = du.safe_filename(image.stem).replace(".", "_")[:40] or "bg"
-            stem = f"{du.BG_PREFIX}raw_{tag}"
-            if du.find_dataset_image(stem)[0] is not None:
-                skipped += 1
-                continue
-            placed += 1
-            split = "val" if (step and placed % step == 0) else "train"
-            dst_image = du.DATASET_IMAGES_DIR / split / f"{stem}{image.suffix.lower()}"
-            dst_image.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(str(image), str(dst_image))
-            label_path = du.dataset_label_path(stem, split)
-            label_path.parent.mkdir(parents=True, exist_ok=True)
-            label_path.write_text("")  # empty label = background / negative example
-            added += 1
-    return {"added": added, "skipped": skipped, "total": du.count_background_images()}
-
-
 def background_retrain_frame(name: str, split: str = "train") -> dict:
     """Turn a captured false-positive frame into a background (negative) image."""
     image = retrain_image_path(name)

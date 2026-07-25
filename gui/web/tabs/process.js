@@ -42,6 +42,9 @@
         <p class="lead">Add photos of <b>empty scenes</b> — the bare mat, the table, your hand with nothing in it,
           cluttered rooms. These become negative examples (empty labels) that teach the model what "nothing" looks
           like, which stops it from drawing boxes when no object is present. Aim for roughly 10% of your dataset.</p>
+        <p class="muted">Tip: you can also drop background <b>pictures</b> straight into
+          <code>data/raw_videos/background/</code> and hit <b>Process</b> above — they are folded in automatically as
+          negatives and never trained as an object. The uploader below does the same thing for individual files.</p>
         <p class="muted">Currently <b id="prBgCount">0</b> background image(s) in the dataset.</p>
         <div class="row" style="margin-top:8px">
           <input type="file" id="prBgFiles" accept="image/*" multiple>

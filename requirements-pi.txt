@@ -2,4 +2,8 @@
 #
 # Do not install requirements.txt on the Pi; that file is for the development
 # computer and includes heavyweight ML/CV packages.
+#
+# src/record_video.py needs Picamera2 + ffmpeg, which are system (apt) packages on
+# Raspberry Pi OS, not pip wheels. They ship with Bookworm; if missing, install with:
+#   sudo apt install -y python3-picamera2 ffmpeg
 pyserial>=3.5
