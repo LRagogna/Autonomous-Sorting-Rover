@@ -37,9 +37,11 @@ log/
 backups/
 
 # Raspberry Pi / camera captures and generated media
+# NOTE: pi_videos/ is intentionally NOT ignored — recordings made on the Pi are
+# LFS-tracked (see .gitattributes) so they can be pushed to GitHub and pulled onto
+# the training computer.
 captures/
 recordings/
-pi_videos/
 *.h264
 
 # OS and editor files

@@ -21,6 +21,7 @@ git sparse-checkout set \
   '/README.md' \
   '/requirements-pi.txt' \
   '/scripts/setup_pi_sparse_checkout.sh' \
+  '/pi_videos/' \
   '/src/main.py' \
   '/src/record_video.py' \
   '/src/serial_drive_turns.ino' \
