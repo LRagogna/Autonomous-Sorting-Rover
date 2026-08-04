@@ -297,3 +297,52 @@ git pull
 - Kept adjusting and retrying until a clean part finally came off the bed, shown on the right in the photo below next to the failed attempts on the left and middle.
 
 ![Failed 3D prints (spaghetti tangle and stringing) next to a clean printed enclosure](images/2026-07-24/80666396476__CB1A8F8C-2295-499B-8880-369EE9A2B66F.jpeg)
+
+## Week Of July 28 - August 3, 2026
+
+### Data Collection
+
+- Spent most of the past week collecting training data, continuing to record and add
+  object clips so the detector learns from more views, distances, lighting, and
+  backgrounds.
+- Captured footage from the rover's own Raspberry Pi camera at the low, on-floor
+  viewpoint the vision system actually sees, to keep closing the train-vs-deploy
+  domain gap.
+- Added a new **car** object category (a toy car) and gathered clips of it, growing the
+  detector from four classes to five (bit, wrench, jenga, screwdriver, car).
+- Retrained the detector on the expanded, human-reviewed dataset plus background
+  (negative) images, and folded the results back through the training GUI.
+
+### Researching The ROS 2 Ecosystem Layout
+
+- Spent the rest of the week researching how to lay out the ROS 2 ecosystem for the
+  rover — how to structure nodes, topics, and messages so perception, decision-making,
+  and driving stay cleanly separated and each piece can be developed or swapped on its
+  own.
+- Settled on a **three-node perception pipeline** that plugs into the existing
+  `/cmd_vel` motor path (the same topic the keyboard teleop and fake motor node already
+  use), so autonomous and manual driving share one motor interface:
+  - **camera node** — publishes camera frames (Pi camera, or a USB webcam / video file
+    for development off the rover).
+  - **evaluation (perception) node** — runs the YOLO detector on each frame and
+    publishes *what* object is seen and *where* it is in the frame.
+  - **action node** — turns those detections into drive commands (turn toward the
+    object, drive forward when centered, stop when close) on `/cmd_vel`.
+- Scaffolded the three nodes in the `rover_control` package with a launch file that
+  brings the whole pipeline up at once, and a matching laptop simulator that runs the
+  same logic on a webcam and writes the drive decisions to files for offline testing.
+
+### Assembled Rover And Detection Test Setup
+
+- Assembled the physical rover for end-to-end testing: Elegoo Smart Robot Car chassis,
+  Raspberry Pi 4 with cooling fan, the OV5647 camera on the 3D-printed angled mount, the
+  Arduino motor shield, and the battery pack.
+- Set the rover up to detect and approach a target object (a toy car) from its own
+  camera's point of view — the exact scenario the perception → action pipeline is being
+  built for.
+
+![Assembled rover — Raspberry Pi 4 with cooling fan, OV5647 camera on the printed angled mount, Arduino motor shield, and battery on the Elegoo chassis](images/2026-08-03/IMG_2568.jpeg)
+
+![Rover positioned to detect and approach a toy car target from its own camera viewpoint](images/2026-08-03/IMG_2569.jpeg)
+
+![Rover facing the toy-car target across the floor — the search-and-approach test scenario](images/2026-08-03/IMG_2570.jpeg)

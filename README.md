@@ -252,6 +252,20 @@ of the loop. *(Screenshots are from an earlier 4-class run; the current model ad
   search → approach → pickup run.
 
 <p align="center">
+  <img src="docs/images/2026-08-03/IMG_2568.jpeg" width="60%" alt="Assembled rover" /><br/>
+  <em>The assembled rover — Raspberry Pi 4 (with cooling fan), OV5647 camera on the
+  3D-printed angled mount, Arduino motor shield, and battery on the Elegoo chassis.</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/2026-08-03/IMG_2569.jpeg" width="45%" alt="Rover facing a toy-car target" />
+  <img src="docs/images/2026-08-03/IMG_2570.jpeg" width="45%" alt="Search-and-approach test setup" />
+  <br/>
+  <em>Set up to detect and approach a target object (a toy car) from the rover's own
+  camera viewpoint — the scenario the perception → action pipeline is being built for.</em>
+</p>
+
+<p align="center">
   <img src="docs/images/2026-06-15/IMG_1304.jpeg" width="45%" alt="Early proof-of-concept build" />
   <img src="docs/images/2026-06-29/IMG_1924.jpeg" width="45%" alt="Early proof-of-concept build" />
   <br/>
