@@ -1,9 +1,9 @@
 # Autonomous Sorting Rover
 
 **A ground-up autonomous robot that finds real-world objects with a custom-trained
-vision model, drives to them with closed-loop wheel odometry, and collects them —
-spanning mechanical CAD, embedded firmware, motion control, and a full computer-vision
-pipeline built and integrated by one person.**
+vision model, drives to them with closed-loop wheel odometry, and collects them.
+Spans mechanical CAD, embedded firmware, motion control, and a full computer-vision
+pipeline.**
 
 This repository is the complete engineering record of that system: the SolidWorks
 parts, the Arduino motor and sensor firmware, a ROS 2 control stack, a custom-trained
@@ -19,7 +19,7 @@ data-to-deployment loop.
 | **Mechanical design (CAD)** | Custom SolidWorks parts — Pi enclosure with cooling clearance, an angled camera mount, a chassis bridge, and a collection funnel — modeled parametrically and exported to STL/STEP for 3D printing. |
 | **Embedded / electrical** | Arduino firmware driving a dual-motor H-bridge over PWM; a non-blocking, timer-based motion controller with empirically calibrated in-place turns; a relay-driven electromagnet end-effector; Raspberry Pi ↔ Arduino serial link. |
 | **Sensing & controls** | Closed-loop **wheel odometry** from a TCRT5000 IR encoder with real signal-conditioning (debounce, held-signal validation, pulse-gap rejection); differential-drive kinematics; a native **ROS 2 Humble** control stack. |
-| **Computer vision / ML** | A YOLOv8 detector trained on self-recorded data (4 classes, **mAP@0.5 ≈ 0.99**, mAP@[.5:.95] ≈ 0.78 on a held-out split), with a human-in-the-loop labeling and retraining workflow. |
+| **Computer vision / ML** | A YOLOv8 detector trained on self-recorded data (5 classes, **mAP@0.5 ≈ 0.99**, mAP@[.5:.95] ≈ 0.78 on a held-out split), with a human-in-the-loop labeling and retraining workflow. |
 | **Software / MLOps** | An 8-stage **Training Control Center** (browser app, Python-stdlib server) that owns upload → auto-label → review → versioned training → live test → hard-negative retraining → deploy, with a model registry and leakage-safe dataset splitting. |
 | **Systems integration** | Four subsystems — perception, mobility, manipulation, and control — designed to compose on real hardware through clean, swappable interfaces. |
 
