@@ -1,6 +1,28 @@
 {
-  "active": "yolo_detector_v2.pt",
+  "active": "yolo_detector_final.pt",
   "models": {
+    "yolo_detector_final.pt": {
+      "base_model": "yolov8n.pt",
+      "batch": 32,
+      "best_epoch": 99,
+      "cos_lr": true,
+      "created": 1785799849.12099,
+      "device": "mps",
+      "epochs": 200,
+      "epochs_run": 159,
+      "final": true,
+      "imgsz": 640,
+      "metrics": {
+        "map50": 0.989,
+        "map50_95": 0.715,
+        "precision": 0.977,
+        "recall": 0.925
+      },
+      "metrics_note": "best.pt validation over val split. Per-class mAP50: bit 0.995, wrench 0.995, jenga 0.977. screwdriver and car have 0 val instances so they are trained but not measured here.",
+      "patience": 60,
+      "run_dir": "models/yolo_runs/detector_final",
+      "version": "final"
+    },
     "yolo_detector_v1.pt": {
       "base_model": "yolov8n.pt",
       "created": 1783467577.338836,
@@ -45,6 +67,38 @@
       },
       "run_dir": "models/yolo_runs/detector",
       "version": 3
+    },
+    "yolo_detector_v4.pt": {
+      "base_model": "yolov8n.pt",
+      "batch": 8,
+      "created": 1785208132.240604,
+      "device": "cpu",
+      "epochs": 5,
+      "imgsz": 640,
+      "metrics": {
+        "map50": 0.9929,
+        "map50_95": 0.6948,
+        "precision": 0.9427,
+        "recall": 0.9024
+      },
+      "run_dir": "models/yolo_runs/detector",
+      "version": 4
+    },
+    "yolo_detector_v5.pt": {
+      "base_model": "yolov8n.pt",
+      "batch": 8,
+      "created": 1785282076.639437,
+      "device": "cpu",
+      "epochs": 50,
+      "imgsz": 640,
+      "metrics": {
+        "map50": 0.9947,
+        "map50_95": 0.7209,
+        "precision": 0.9923,
+        "recall": 0.9881
+      },
+      "run_dir": "models/yolo_runs/detector",
+      "version": 5
     }
   }
 }

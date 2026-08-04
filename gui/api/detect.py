@@ -16,17 +16,32 @@ _tested_marked = False
 def detect_models(req):
     """Model versions available to test, newest first, plus the active one."""
     registry = du.load_registry()
+    active_name = registry.get("active")
     models = []
     for path in du.model_version_files():
         info = registry.get("models", {}).get(path.name, {})
         models.append({
             "file": path.name,
             "version": info.get("version"),
-            "active": path.name == registry.get("active"),
+            "active": path.name == active_name,
             "metrics": info.get("metrics", {}),
         })
     models.sort(key=lambda m: m.get("version") or 0, reverse=True)
-    return {"models": models, "active": registry.get("active")}
+
+    # Include the active model even when it isn't a version-numbered file
+    # (e.g. yolo_detector_final.pt), so it stays selectable here and is
+    # preselected. Listed first as the most relevant choice.
+    listed = {m["file"] for m in models}
+    if active_name and active_name not in listed and (du.MODELS_DIR / active_name).exists():
+        info = registry.get("models", {}).get(active_name, {})
+        models.insert(0, {
+            "file": active_name,
+            "version": info.get("version"),
+            "active": True,
+            "metrics": info.get("metrics", {}),
+        })
+
+    return {"models": models, "active": active_name}
 
 
 @route("POST", "/api/detect")

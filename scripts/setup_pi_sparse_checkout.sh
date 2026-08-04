@@ -21,7 +21,9 @@ git sparse-checkout set \
   '/README.md' \
   '/requirements-pi.txt' \
   '/scripts/setup_pi_sparse_checkout.sh' \
+  '/scripts/run_pi_detector.sh' \
   '/src/main.py' \
+  '/src/pi_yolo_detector.py' \
   '/src/record_video.py' \
   '/src/serial_drive_turns.ino' \
   '/tests/' \

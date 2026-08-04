@@ -281,3 +281,19 @@ git pull
 - Decided distance should be measured purely by the white-tape pulses and removed the timer entirely, so the car drives until it has counted enough real pulses.
 - Tradeoff accepted: if the sensor ever reads nothing, the car keeps driving until a `stop` command is sent, so the plan is to confirm on each run that the pulse count climbs as the wheel turns.
 - Next step is a real-floor test of `forward 1 ft` to confirm the pulse count reaches 3 cleanly, then adjust the white-signal filter if any real pulses are missed.
+
+## July 23-24, 2026
+
+### Data Collection On The Pi Camera
+
+- Spent these two days collecting training data using the Raspberry Pi camera, capturing object clips from the rover's own point of view instead of a phone camera.
+- Recorded the rover driving up to each object, filming it from the low, on-floor angle the vision system will actually see, then driving away.
+- Gathered Pi-camera footage across the object categories (bit, car, jenga, screwdriver, wrench) to close the domain gap between the training data and the rover's real-world view.
+
+### 3D Printing Troubles
+
+- Worked through a rough stretch on the 3D printer while trying to print the rover's electronics and camera mounts.
+- Several prints failed outright: instead of a solid part, the printer laid down loose loops of plastic that piled up into a tangled "spaghetti" mess, and other prints came out covered in thin stray strands (stringing) with messy, poorly-formed top layers.
+- Kept adjusting and retrying until a clean part finally came off the bed, shown on the right in the photo below next to the failed attempts on the left and middle.
+
+![Failed 3D prints (spaghetti tangle and stringing) next to a clean printed enclosure](images/2026-07-24/80666396476__CB1A8F8C-2295-499B-8880-369EE9A2B66F.jpeg)
