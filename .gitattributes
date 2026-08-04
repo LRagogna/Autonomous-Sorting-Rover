@@ -11,6 +11,14 @@ tests/** filter=lfs diff=lfs merge=lfs -text
 tests/**/*.py -filter -diff -merge text
 docs/images/** filter=lfs diff=lfs merge=lfs -text
 docs/images/**/.gitkeep -filter -diff -merge text
+# Demo/documentation video clips anywhere under docs/ are large -> track via LFS
+# (docs/images/** above already covers clips there; these cover clips elsewhere in docs/).
+docs/**/*.mov filter=lfs diff=lfs merge=lfs -text
+docs/**/*.MOV filter=lfs diff=lfs merge=lfs -text
+docs/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+docs/**/*.MP4 filter=lfs diff=lfs merge=lfs -text
+docs/**/*.m4v filter=lfs diff=lfs merge=lfs -text
+docs/**/*.M4V filter=lfs diff=lfs merge=lfs -text
 *.sldprt filter=lfs diff=lfs merge=lfs -text
 *.sldasm filter=lfs diff=lfs merge=lfs -text
 *.slddrw filter=lfs diff=lfs merge=lfs -text

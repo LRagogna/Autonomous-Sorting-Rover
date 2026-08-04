@@ -42,6 +42,15 @@ backups/
 *.mov
 *.MOV
 
+# EXCEPTION: demo/documentation clips under docs/ ARE kept (LFS-tracked) so they
+# show up on GitHub. These negations must stay AFTER the *.mov/*.MOV rules above.
+!docs/**/*.mov
+!docs/**/*.MOV
+!docs/**/*.mp4
+!docs/**/*.MP4
+!docs/**/*.m4v
+!docs/**/*.M4V
+
 # Training pictures/media stay LOCAL only — they are NOT kept on GitHub. Only the
 # documentation pictures under docs/images/ are tracked. The labels (.txt), meta,
 # dataset.yaml, and trained model weights (models/*.pt) ARE kept in git so the
