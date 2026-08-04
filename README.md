@@ -72,6 +72,32 @@ Parts are authored natively and exported to neutral **STL/STEP** for printing an
 sharing, keeping the design reproducible. The current revisions are **being
 3D-printed and fitted to the chassis** as the mechanical design is iterated.
 
+**v1 printed parts** — the first revision of the custom mounts, off the printer and
+in hand for test-fitting:
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/solidworksv1/IMG_2526.jpeg" width="100%" alt="3D-printed Raspberry Pi enclosure tray" /><br/>
+      <em>Raspberry Pi enclosure tray — tabbed mounts and cable slots.</em>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/solidworksv1/IMG_2525.jpeg" width="100%" alt="3D-printed angled camera-mount wedge" /><br/>
+      <em>Angled camera-mount wedge — fixes the OV5647 at a set downward tilt.</em>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/solidworksv1/IMG_2527.jpeg" width="100%" alt="3D-printed chassis bridge" /><br/>
+      <em>Chassis bridge — ties mounting points across the frame.</em>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/solidworksv1/IMG_2524.jpeg" width="100%" alt="3D-printed curved mount bracket" /><br/>
+      <em>Curved mount bracket — printed and ready to fit.</em>
+    </td>
+  </tr>
+</table>
+
 ### 2 · Electronics & embedded firmware (`src/serial_drive_turns.ino`)
 
 The Arduino runs a **non-blocking** motion controller — no `delay()` anywhere in the
@@ -159,6 +185,54 @@ frame, so near-identical frames can't leak across the split and inflate metrics;
 **versioned and never overwritten**; and a Raspberry Pi recorder (`src/record_video.py`)
 captures training footage from the deployment camera itself to close the train-vs-deploy
 domain gap.
+
+#### The workflow, screen by screen
+
+A live sidebar (dataset stats + pipeline checklist) is always visible; each tab is one stage
+of the loop. *(Screenshots are from an earlier 4-class run; the current model adds a 5th class.)*
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_01.png" width="100%" alt="Upload Clips tab" /><br/>
+      <b>1 · Upload Clips</b> — organize the videos you recorded, per object class.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_02.png" width="100%" alt="Process Dataset tab" /><br/>
+      <b>2 · Process Dataset</b> — extract frames, auto-draw boxes, fold in background negatives.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_03.png" width="100%" alt="Review / Edit Labels tab" /><br/>
+      <b>3 · Review / Edit</b> — pass, fail, or drag-redraw every box with keyboard shortcuts.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_04.png" width="100%" alt="Train Model tab" /><br/>
+      <b>4 · Train Model</b> — versioned training, by-video split, live metrics &amp; curves.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_05.png" width="100%" alt="Test Detector tab" /><br/>
+      <b>5 · Test Detector</b> — run a version live on a camera; capture mistakes in one click.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_06.png" width="100%" alt="Retraining Queue tab" /><br/>
+      <b>6 · Retraining Queue</b> — correct captured failures (or mark background), fold back in.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_07.png" width="100%" alt="Deploy Model tab" /><br/>
+      <b>7 · Deploy</b> — promote the active model into the Pi deploy bundle behind a checklist.
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/gui_pics/gui_08.png" width="100%" alt="Danger Zone tab" /><br/>
+      <b>8 · Danger Zone</b> — guarded data-wipe / start-over maintenance.
+    </td>
+  </tr>
+</table>
 
 ---
 
