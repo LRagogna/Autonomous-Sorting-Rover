@@ -6,7 +6,9 @@ set -euo pipefail
 # The Pi should only pull files needed for rover operation and on-device
 # hardware tests. Training data, training code, desktop-only detector tools,
 # generated model run artifacts, documentation, and CAD files stay out of the Pi
-# working tree.
+# working tree. The one exception is models/active_model.pt: the current active
+# detector is small (~6 MB, a plain git blob, not LFS) and is needed to run the
+# detector on the Pi, so it is pulled. Other model versions stay off the Pi.
 #
 # Sparse checkout keeps the working tree allowlisted to runtime paths. The LFS
 # fetch exclusion is a second guard so normal Git LFS operations do not download
@@ -22,6 +24,7 @@ git sparse-checkout set \
   '/requirements-pi.txt' \
   '/scripts/setup_pi_sparse_checkout.sh' \
   '/scripts/run_pi_detector.sh' \
+  '/models/active_model.pt' \
   '/src/main.py' \
   '/src/pi_yolo_detector.py' \
   '/src/record_video.py' \
