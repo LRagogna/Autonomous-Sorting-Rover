@@ -42,6 +42,20 @@ backups/
 *.mov
 *.MOV
 
+# Training pictures/media stay LOCAL only — they are NOT kept on GitHub. Only the
+# documentation pictures under docs/images/ are tracked. The labels (.txt), meta,
+# dataset.yaml, and trained model weights (models/*.pt) ARE kept in git so the
+# dataset and models can be reconstructed; the source frames/clips are transferred
+# off-GitHub (rsync from the Pi, local capture) as needed.
+data/frames/
+data/yolo_dataset/images/
+data/rejected/images/
+data/retrain_queue/images/
+data/raw_videos/
+# YOLO training-run artifacts (batch/curve images, per-run weights) — regenerated
+# on every training run; the promoted models live in models/*.pt instead.
+models/yolo_runs/
+
 # Raspberry Pi / camera captures and generated media
 # pi_videos/ is kept OUT of git — videos are too big for GitHub's free LFS budget.
 # Transfer Pi recordings to the training computer directly over the LAN instead:
