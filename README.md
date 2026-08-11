@@ -133,21 +133,72 @@ exercise in real sensor engineering:
 
 > 🎥 **Wheel-odometry bring-up demo:** [`docs/images/2026-07-20/IMG_2432.MOV`](docs/images/2026-07-20/IMG_2432.MOV)
 
-### 4 · Motion control & ROS 2 (`ros2_ws/`)
+### 4 · Motion control & ROS 2 (`ros2_ws/`, `ros2_pi/`)
 
-A native **ROS 2 Humble** workspace (installed via RoboStack on Apple Silicon — no
-Docker, VM, or simulator) implements teleoperated differential drive with textbook-clean
-separation of concerns:
+A native **ROS 2 Humble** stack (installed via RoboStack on Apple Silicon — no Docker,
+VM, or simulator) implements both **manual teleop** and the **autonomous perception
+pipeline**, wired around a single integration point: `geometry_msgs/Twist` on `/cmd_vel`.
+Any command source — the keyboard or the autonomous brain — drops into the same motor path.
+
+```mermaid
+flowchart LR
+    CAM[camera_node<br/>webcam / Pi cam / video] -->|/camera/image/compressed| PER[perception_node<br/>YOLO detector]
+    PER -->|/perception/detection| ACT[action_node<br/>steer toward target]
+    KEY[keyboard_node<br/>WASD teleop] -->|/cmd_vel| MOT
+    ACT -->|/cmd_vel| MOT[fake_motor_node · dev<br/>arduino_bridge_node · Pi]
+    ACT -->|/cmd_vel| ODO[odometry_node]
+    ODO -->|/odom| VIZ[viz_node<br/>overlay window]
+    CAM -.->|/camera/image/compressed| VIZ
+    PER -.->|/perception/detection| VIZ
+```
 
 - **`differential_drive.py`** — pure `Twist (v, ω) → (left, right)` kinematics with
   **zero ROS or hardware dependencies**, normalized and clamped to the motor range. Being
-  dependency-free is what makes it reusable and unit-testable.
-- **`keyboard_node`** publishes `geometry_msgs/Twist` on `/cmd_vel`; **`fake_motor_node`**
-  subscribes and prints motor values. `/cmd_vel` is the *single* integration point, so a
-  real `arduino_bridge_node` drops in — reusing the same kinematics — without changing the
-  teleop or the message contract.
-- Chassis geometry (wheel base, max speeds, output scale) is exposed as **ROS parameters**,
-  so a different robot needs no code change. Nodes are cross-platform (`termios`/`msvcrt`).
+  dependency-free is what makes it reusable and unit-testable, and it is shared verbatim by
+  the simulated and the real motor node.
+- **Perception pipeline** — `camera_node` publishes frames, `perception_node` runs the YOLO
+  detector and publishes *what* object is seen and *where* (a self-describing JSON detection:
+  label, confidence, center offset, box area), and `action_node` turns that into a `/cmd_vel`
+  command: turn toward the object, drive forward once centered, stop when close. Steering is
+  **target-locked** — the rover only approaches the one object class it was told to, never
+  "whatever it happens to see".
+- **`odometry_node`** dead-reckons the rover's pose by integrating `/cmd_vel` over time and
+  publishes `nav_msgs/Odometry` on `/odom` — the *intended* trajectory the wheels are being
+  asked to follow (later ground-truthed by the IR wheel encoder in §3).
+- **`viz_node`** is the "watch it think" monitor: one OpenCV window over the live feed showing
+  the detection box, the LEFT/RIGHT motor values, a turn / forward / stop indicator, and an
+  odometry mini-map tracing the path.
+- **Two workspaces, same nodes.** `ros2_ws/` is the **development/test** workspace (laptop
+  webcam + the viz window); `ros2_pi/` is the **on-robot** copy with Pi-camera defaults and a
+  real `arduino_bridge_node` that writes `left,right` values to the Arduino over serial — the
+  Pi pulls it via a runtime-only sparse checkout. `/cmd_vel` and the message contract are
+  identical across both, so swapping simulated motors for real ones changes nothing upstream.
+- Chassis geometry (wheel base, max speeds, output scale) and every runtime knob are exposed
+  as **ROS parameters / launch args**, so a different robot needs no code change. Nodes are
+  cross-platform (`termios`/`msvcrt`).
+
+#### ROS 2 demos (on the development computer)
+
+Two one-command demos let you exercise the whole stack on a laptop with just a webcam —
+no rover attached:
+
+**🎯 Autonomous detection test — `scripts/run_desktop_tester.sh`**
+The terminal first **asks which object to detect** (bit / wrench / jenga / screwdriver / car),
+then brings up the full pipeline on your webcam locked to *only* that class. You hold the
+chosen object in front of the camera and watch the rover decide how to drive to it: the green
+detection box tracks the object, and in real time the overlay shows the LEFT/RIGHT motor
+values and a `TURN LEFT / FORWARD / STOP` indicator as `action_node` steers toward it and
+"arrives" when the object fills enough of the frame. Motors are simulated, so you see the
+*intended* driving — the exact behavior the real rover will execute — without any hardware.
+
+**🧭 Odometry demo — `scripts/run_odometry_demo.sh`**
+Runs the camera, the odometry integrator, the overlay window, and keyboard teleop (no YOLO
+model needed), with autonomous steering off so *you* are the only thing that moves the rover.
+You drive with `w/a/s/d` and the odometry mini-map traces the rover's dead-reckoned path live —
+turning in place rotates the heading, driving forward extends the trail — demonstrating the
+`Twist → pose` integration behind `/odom`. Because it is open-loop (no encoder feedback yet),
+it shows the commanded trajectory, which is precisely what the IR wheel-encoder odometry will
+later correct against.
 
 ### 5 · Perception — custom YOLO detector
 
@@ -244,10 +295,13 @@ of the loop. *(Screenshots are from an earlier 4-class run; the current model ad
 - **Vision working** across 4 classes from self-recorded, human-reviewed data; multiple
   versioned models tracked with metrics.
 - **Training Control Center** driving the full upload → … → deploy loop.
-- **ROS 2 teleop → kinematics → motor node** running (simulated motor output today; the
-  serial bridge is designed as a drop-in).
+- **ROS 2 stack** running end-to-end in simulation: the full perception pipeline
+  (camera → YOLO → target-locked steering → motors), plus dead-reckoning odometry and a
+  live overlay window, driven by two one-command laptop demos. Split into a dev workspace
+  (`ros2_ws/`) and an on-robot copy (`ros2_pi/`) whose `arduino_bridge_node` is a drop-in
+  for the real motors over serial.
 - **Wheel odometry** firmware written and in bring-up — closing the loop on measured
-  distance travel.
+  distance travel, to ground-truth the ROS dead-reckoning.
 - **Next:** wire the ROS 2 serial bridge to hardware and compose a first end-to-end
   search → approach → pickup run.
 
@@ -287,8 +341,12 @@ src/
 tests/
   ir_wheel_tape_pulse_test/ # Arduino: IR wheel-encoder closed-loop distance control
   rectangle_detect.py       # early color-segmentation CV proof of concept
-ros2_ws/           # ROS 2 Humble control workspace
-  src/rover_control/        # differential_drive.py, keyboard_node, fake_motor_node
+ros2_ws/           # ROS 2 Humble workspace — development/test (laptop webcam + viz window)
+  src/rover_control/        # camera / perception / action / odometry / viz / motor / teleop nodes
+ros2_pi/           # ROS 2 Humble workspace — on-robot copy (Pi camera + arduino_bridge_node)
+scripts/
+  run_desktop_tester.sh     # interactive autonomous detection test (asks which object)
+  run_odometry_demo.sh      # keyboard-driven odometry demo
 gui/               # Training Control Center — browser app (stdlib server)
   app.py  server.py  jobs.py  state.py  api/  web/
 ml/                # dataset + model logic (importable + CLI)
@@ -314,15 +372,28 @@ python gui/app.py            # opens the browser control center
 python src/desktop_yolo_detector.py
 ```
 
-**ROS 2 teleop** (two terminals, after building the workspace — see `ros2_ws/README.md`):
+**ROS 2 autonomous detection test** — asks which object to detect, then runs the full
+webcam pipeline locked to that class (after building the workspace — see `ros2_ws/README.md`):
+
+```bash
+cd ~/Desktop/AutonomousRover && ./scripts/run_desktop_tester.sh
+```
+
+**ROS 2 odometry demo** — drive with the keyboard and watch the dead-reckoned path trace live:
+
+```bash
+cd ~/Desktop/AutonomousRover && ./scripts/run_odometry_demo.sh
+```
+
+**ROS 2 teleop** (two terminals):
 
 ```bash
 ros2 run rover_control fake_motor_node   # terminal A
 ros2 run rover_control keyboard_node     # terminal B
 ```
 
-**Raspberry Pi** runs a lean runtime checkout (operational rover code + hardware tests only);
-`src/main.py` sends drive commands to the Arduino over serial.
+**Raspberry Pi** runs a lean runtime checkout (operational rover code + the `ros2_pi/`
+workspace + hardware tests only); `src/main.py` sends drive commands to the Arduino over serial.
 
 ---
 

@@ -18,7 +18,7 @@ setup(
     zip_safe=True,
     maintainer='Leonardo Ragogna',
     maintainer_email='alexiragogna@gmail.com',
-    description='Modular keyboard teleop and fake motor driver for the autonomous rover.',
+    description='Raspberry Pi rover control: perception pipeline + real Arduino motor bridge.',
     license='MIT',
     entry_points={
         'console_scripts': [
@@ -29,6 +29,7 @@ setup(
             'action_node = rover_control.action_node:main',
             'odometry_node = rover_control.odometry_node:main',
             'viz_node = rover_control.viz_node:main',
+            'arduino_bridge_node = rover_control.arduino_bridge_node:main',
         ],
     },
 )

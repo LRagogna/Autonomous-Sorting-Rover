@@ -1,19 +1,50 @@
-# Autonomous Rover — ROS 2 control workspace
+# Autonomous Rover — ROS 2 control workspace (development computer)
 
 Native ROS 2 **Humble** on Apple Silicon (macOS), installed via **RoboStack**
 (conda-forge packages). **No Gazebo, no VM, no Docker, no 3D simulator.**
 
-Two nodes wired over the standard `/cmd_vel` topic:
+This is the **development/test** workspace — you run it on the laptop with a USB
+webcam (or a video file) and watch the rover "think" in a live OpenCV window.
+The on-robot twin is [`../ros2_pi`](../ros2_pi): the same nodes, but with Pi
+camera defaults and a real Arduino motor bridge instead of the viz window.
+
+Everything is wired around one integration point, `/cmd_vel`
+(`geometry_msgs/Twist`), so any command source drops into the same motor path.
+
+**Manual teleop:**
 
 ```
- keyboard_node  --(geometry_msgs/Twist)-->  /cmd_vel  -->  fake_motor_node
-   reads keys                                              prints simulated
-   publishes Twist                                         LEFT / RIGHT motors
+ keyboard_node  --(Twist)-->  /cmd_vel  -->  fake_motor_node
+   reads keys                               prints simulated LEFT / RIGHT motors
 ```
 
-`/cmd_vel` is the only integration point, so `fake_motor_node` can later be
-replaced by an Arduino serial bridge without touching `keyboard_node` or any
-other part of the system.
+**Autonomous perception pipeline** (one launch file starts all of it):
+
+```
+ camera_node ─▶ perception_node ─▶ action_node ─┬─▶ fake_motor_node
+  (webcam)        (YOLO)          (/cmd_vel)     ├─▶ odometry_node ─▶ /odom
+                                                 └─▶ viz_node  (OpenCV overlay window)
+```
+
+`viz_node` shows the live feed with the detected object box, the LEFT/RIGHT motor
+values, a turn/forward arrow, and an odometry mini-map — so you can *see* exactly
+what the rover would do. `odometry_node` dead-reckons pose from `/cmd_vel` (no
+encoders yet) onto `/odom`.
+
+Because `/cmd_vel` is the only integration point, `fake_motor_node` is replaced
+on the Pi by `arduino_bridge_node` (real serial) with no other changes.
+
+### Autonomous pipeline — one command
+
+```bash
+source ~/Desktop/AutonomousRover/ros2_ws/rover_env.sh
+# Laptop webcam -> YOLO -> steer -> simulated motors, with the live overlay window:
+ros2 launch rover_control perception_pipeline.launch.py source:=usb
+```
+
+Common overrides: `source:=video video_path:=clip.mp4` (offline replay),
+`target_class:=bit` (chase one class), `search:=true` (rotate to look around),
+`viz:=false` / `odom:=false` (turn those nodes off).
 
 ---
 
@@ -146,14 +177,25 @@ Notes for Windows:
 ros2_ws/
 ├── rover_env.sh                    # activate env + overlay workspace (zsh/bash aware)
 └── src/rover_control/
-    ├── package.xml                 # ament_python package, deps: rclpy, geometry_msgs
-    ├── setup.py                     # console_scripts: keyboard_node, fake_motor_node
+    ├── package.xml                 # ament_python; deps: rclpy, geometry/sensor/std/nav_msgs
+    ├── setup.py                     # console_scripts for every node below
     ├── setup.cfg
+    ├── launch/
+    │   └── perception_pipeline.launch.py  # starts camera+perception+action+motor+odom+viz
     └── rover_control/
         ├── differential_drive.py   # pure Twist -> (left,right) math (ROS/HW-free)
         ├── keyboard_node.py        # reads keys, publishes Twist on /cmd_vel
-        └── fake_motor_node.py      # subscribes /cmd_vel, prints motor values
+        ├── fake_motor_node.py      # subscribes /cmd_vel, prints motor values
+        ├── camera_node.py          # webcam/Pi cam/video -> /camera/image/compressed
+        ├── perception_node.py      # YOLO -> /perception/detection
+        ├── action_node.py          # detection -> /cmd_vel (steer toward target)
+        ├── odometry_node.py        # integrate /cmd_vel -> /odom (dead reckoning)
+        └── viz_node.py             # OpenCV overlay: feed + boxes + motor values + odom map
 ```
+
+> The on-robot copy is `../ros2_pi`, which adds `arduino_bridge_node.py` (real
+> serial motors) and defaults to the Pi camera. Keep node changes in sync between
+> the two workspaces.
 
 ---
 

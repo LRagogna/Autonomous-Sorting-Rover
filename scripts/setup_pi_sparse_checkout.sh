@@ -30,9 +30,12 @@ git sparse-checkout set \
   '/src/record_video.py' \
   '/src/serial_drive_turns.ino' \
   '/tests/' \
-  '/ros2_ws/README.md' \
-  '/ros2_ws/rover_env.sh' \
-  '/ros2_ws/src/'
+  '/ros2_pi/'
+
+# NOTE: the Pi pulls the ros2_pi/ workspace (Pi camera defaults + real Arduino
+# motor bridge), NOT ros2_ws/. ros2_ws/ is the development-computer workspace
+# (it includes the OpenCV overlay viz window, which needs a display) and stays
+# off the headless Pi.
 
 echo "Configured sparse checkout for Raspberry Pi runtime files and hardware tests."
 echo "Excluded data, docs, CAD, ML training, model artifacts, and desktop tools from Git LFS fetches."

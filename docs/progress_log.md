@@ -346,3 +346,50 @@ git pull
 ![Rover positioned to detect and approach a toy car target from its own camera viewpoint](images/2026-08-03/IMG_2569.jpeg)
 
 ![Rover facing the toy-car target across the floor — the search-and-approach test scenario](images/2026-08-03/IMG_2570.jpeg)
+
+## August 10, 2026
+
+### Built Out The ROS 2 Stack — Odometry, Visualization, And A Pi Workspace
+
+- Turned the scaffolded three-node pipeline into a working, testable ROS 2 stack and split
+  it into two workspaces that share the same node code:
+  - **`ros2_ws/`** — the development/test workspace, run on the laptop with a USB webcam and
+    a live on-screen window.
+  - **`ros2_pi/`** — a standalone on-robot copy with Raspberry Pi defaults (Pi camera) and a
+    real Arduino motor bridge, set up so the Pi pulls only this workspace via its runtime
+    sparse checkout (kept off the Pi before; the desktop-only viz window needs a display).
+- Added two new nodes to the `rover_control` package:
+  - **`odometry_node`** — dead-reckons the rover's pose by integrating the `/cmd_vel`
+    velocity commands over time and publishes it on `/odom`. It shows the *intended* path the
+    wheels are being asked to follow (open-loop, to later be ground-truthed by the IR wheel
+    encoder), so odometry only moves when there is actually a drive command.
+  - **`viz_node`** — a single OpenCV overlay window that shows, on the live camera feed, the
+    detected object's box, the LEFT/RIGHT motor values the wheels are being commanded, a
+    turn / forward / stop indicator, and an odometry mini-map tracing the path — a "watch it
+    think" monitor for verifying the whole loop at a glance.
+- Added **`arduino_bridge_node`** for the Pi: the real motor driver that writes `left,right`
+  values to the Arduino over serial. It reuses the shared differential-drive kinematics and
+  only replaces the "print the values" step with a serial write, so it drops into the exact
+  same `/cmd_vel` path as the simulated motor node with nothing upstream changing.
+- Enforced **target-locked steering**: the rover only drives toward the one specified object
+  class, never toward any object it happens to detect. The perception and action nodes are
+  both told which class to lock onto.
+
+### Two One-Command Demos For Testing On The Laptop
+
+- **Autonomous detection test** (`scripts/run_desktop_tester.sh`) — the terminal first asks
+  which object to detect (bit / wrench / jenga / screwdriver / car), then launches the full
+  webcam pipeline locked to that class. Holding the object in front of the camera shows the
+  detector tracking it and the drive commands (motor values + turn/forward/stop) responding
+  in real time as the rover decides how to approach it, all with simulated motors.
+- **Odometry demo** (`scripts/run_odometry_demo.sh`) — runs the camera, odometry, overlay
+  window, and keyboard teleop with autonomous steering off, so driving with `w/a/s/d` traces
+  the rover's dead-reckoned path live on the odometry mini-map.
+- Both run natively (RoboStack ROS 2 Humble in a micromamba env) with no Docker, VM, or
+  simulator, and need only a webcam — no rover attached.
+
+### Documentation
+
+- Updated the main README's ROS 2 section with the current architecture (node graph, the two
+  workspaces, target-locked steering, odometry, and the overlay) and detailed write-ups of
+  both demos, and refreshed the ROS 2 workspace READMEs to match.

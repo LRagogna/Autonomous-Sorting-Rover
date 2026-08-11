@@ -18,6 +18,11 @@
 
     Because action_node drives /cmd_vel, the same motor path serves both teleop
     and autonomous modes.
+
+    RASPBERRY PI FLAVOUR: this ros2_pi copy adds arduino_bridge_node, which
+    writes the left/right values to a real Arduino over serial (pyserial), and
+    defaults the launch file to the Pi camera + real motors. odometry_node
+    dead-reckons pose from /cmd_vel onto /odom.
   </description>
   <maintainer email="alexiragogna@gmail.com">Leonardo Ragogna</maintainer>
   <license>MIT</license>
@@ -31,6 +36,9 @@
        them in the ROS environment: pip install ultralytics opencv-python -->
 
   <exec_depend>python3-opencv</exec_depend>
+  <!-- arduino_bridge_node writes motor values over serial; pyserial is a pip
+       package (see requirements-pi.txt): pip install pyserial -->
+  <exec_depend>python3-serial</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
