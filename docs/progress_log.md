@@ -125,14 +125,6 @@ git sparse-checkout set '/*' '!/data/' '!/docs/images/'
 git pull
 ```
 
-### Documentation Style
-
-- Established a project documentation rule: the GitHub repo should be understandable to a beginner.
-- Added the rule to `docs/context.md`: a five-year-old should be able to go through the project and understand what each part is for.
-- Added more thorough comments and top-of-file usage instructions to:
-  - `data/extract_video_frames.py`
-  - `tests/rectangle_detect.py`
-
 ## Week Of June 22, 2026
 
 ### ML Training Images
