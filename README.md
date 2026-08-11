@@ -19,7 +19,7 @@ data-to-deployment loop.
 | **Mechanical design (CAD)** | Custom SolidWorks parts — Pi enclosure with cooling clearance, an angled camera mount, a chassis bridge, and a collection funnel — modeled parametrically and exported to STL/STEP for 3D printing. |
 | **Embedded / electrical** | Arduino firmware driving a dual-motor H-bridge over PWM; a non-blocking, timer-based motion controller with empirically calibrated in-place turns; a relay-driven electromagnet end-effector; Raspberry Pi ↔ Arduino serial link. |
 | **Sensing & controls** | Closed-loop **wheel odometry** from a TCRT5000 IR encoder with real signal-conditioning (debounce, held-signal validation, pulse-gap rejection); differential-drive kinematics; a native **ROS 2 Humble** control stack. |
-| **Computer vision / ML** | A YOLOv8 detector trained on self-recorded data (5 classes, **mAP@0.5 ≈ 0.99**, mAP@[.5:.95] ≈ 0.78 on a held-out split), with a human-in-the-loop labeling and retraining workflow. |
+| **Computer vision / ML** | A YOLOv8 detector trained on self-recorded data (bit, wrench, jenga, screwdriver, car), with a human-in-the-loop labeling and retraining workflow. |
 | **Software / MLOps** | An 8-stage **Training Control Center** (browser app, Python-stdlib server) that owns upload → auto-label → review → versioned training → live test → hard-negative retraining → deploy, with a model registry and leakage-safe dataset splitting. |
 | **Systems integration** | Four subsystems — perception, mobility, manipulation, and control — designed to compose on real hardware through clean, swappable interfaces. |
 
@@ -131,7 +131,7 @@ exercise in real sensor engineering:
   behavior is observable and tunable during bring-up.
 - Optional active-braking pulse to cancel coast at the target.
 
-> 🎥 **Wheel-odometry bring-up demo:** [`docs/images/2026-07-20/IMG_2432.MOV`](docs/images/2026-07-20/IMG_2432.MOV)
+> **Wheel-odometry bring-up demo:** [`docs/images/2026-07-20/IMG_2432.MOV`](docs/images/2026-07-20/IMG_2432.MOV)
 
 ### 4 · Motion control & ROS 2 (`ros2_ws/`, `ros2_pi/`)
 
@@ -182,7 +182,7 @@ flowchart LR
 Two one-command demos let you exercise the whole stack on a laptop with just a webcam —
 no rover attached:
 
-**🎯 Autonomous detection test — `scripts/run_desktop_tester.sh`**
+**Autonomous detection test — `scripts/run_desktop_tester.sh`**
 The terminal first **asks which object to detect** (bit / wrench / jenga / screwdriver / car),
 then brings up the full pipeline on your webcam locked to *only* that class. You hold the
 chosen object in front of the camera and watch the rover decide how to drive to it: the green
@@ -191,7 +191,9 @@ values and a `TURN LEFT / FORWARD / STOP` indicator as `action_node` steers towa
 "arrives" when the object fills enough of the frame. Motors are simulated, so you see the
 *intended* driving — the exact behavior the real rover will execute — without any hardware.
 
-**🧭 Odometry demo — `scripts/run_odometry_demo.sh`**
+> **Detection test demo:** [`docs/images/demo/classification demo.mov`](docs/images/demo/classification%20demo.mov)
+
+**Odometry demo — `scripts/run_odometry_demo.sh`**
 Runs the camera, the odometry integrator, the overlay window, and keyboard teleop (no YOLO
 model needed), with autonomous steering off so *you* are the only thing that moves the rover.
 You drive with `w/a/s/d` and the odometry mini-map traces the rover's dead-reckoned path live —
@@ -200,13 +202,14 @@ turning in place rotates the heading, driving forward extends the trail — demo
 it shows the commanded trajectory, which is precisely what the IR wheel-encoder odometry will
 later correct against.
 
+> **Odometry demo:** [`docs/images/demo/odometry demo.mov`](docs/images/demo/odometry%20demo.mov)
+
 ### 5 · Perception — custom YOLO detector
 
 The detector is trained entirely on the rover's own recordings, not a stock dataset:
 
-- **YOLOv8**, fine-tuned to four classes (**bit, wrench, jenga, screwdriver**) from ~712
-  self-recorded, human-reviewed images across multiple versioned models.
-- Latest model: **mAP@0.5 ≈ 0.99**, **mAP@[.5:.95] ≈ 0.78** on a held-out validation split.
+- **YOLOv8**, fine-tuned to the rover's object classes (**bit, wrench, jenga, screwdriver,
+  car**) from self-recorded, human-reviewed images across multiple versioned models.
 - Runs live on a webcam or the Pi camera, drawing labeled boxes with confidence, with
   temporal box-smoothing to steady detections (`src/desktop_yolo_detector.py`).
 - **Negative/background images** are first-class training data to suppress false positives
@@ -224,7 +227,7 @@ web framework) with a modular route/API design and state derived live from the f
 3. **Review / Edit Labels** — pass, fail, or drag-redraw every box with keyboard shortcuts;
    rejected frames are quarantined but recoverable.
 4. **Train Model** — versioned training with presets; every run saves
-   `models/yolo_detector_vN.pt` and logs precision/recall/mAP to a registry.
+   `models/yolo_detector_vN.pt` and logs its training metrics to a registry.
 5. **Test Detector** — run any version live and capture mistakes in one click.
 6. **Retraining Queue** — correct captured failures (or mark them background) and fold them
    back in — a proper **hard-negative mining loop**.
